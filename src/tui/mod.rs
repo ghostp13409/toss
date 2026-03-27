@@ -23,7 +23,7 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
 
     // create app and run it
     let mut app = App::new();
-    let res = run_app(&mut terminal, app);
+    let res = run_app(&mut terminal, &mut app);
 
     // restore terminal
     disable_raw_mode()?;
@@ -42,19 +42,24 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
-    mut app: App,
-) -> io::Result<()> {
+    app: &mut App,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    <B as ratatui::backend::Backend>::Error: 'static,
+{
     let tick_rate = Duration::from_millis(250);
     let mut last_tick = Instant::now();
     loop {
-        terminal.draw(|f| ui::render(f, &mut app))?;
+        terminal.draw(|f| ui::render(f, app))?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                handle_input(&mut app, key);
+                if key.kind == event::KeyEventKind::Press {
+                    handle_input(app, key);
+                }
             }
         }
         if last_tick.elapsed() >= tick_rate {

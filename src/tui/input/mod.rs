@@ -1,5 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crate::tui::app::{App, InputMode, FocusedPanel};
+use crossterm::event::{KeyCode, KeyEvent};
+use crate::tui::app::{App, InputMode, UiLayer, FocusedPanel};
 
 pub fn handle_input(app: &mut App, key: KeyEvent) {
     match app.input_mode {
@@ -13,16 +13,29 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Tab => app.next_panel(),
-        KeyCode::BackTab => app.previous_panel(),
+        
+        // Drill Down (Enter or l)
+        KeyCode::Enter | KeyCode::Char('l') => {
+            app.drill_down();
+        }
+        
+        // Pop Up (Esc or h)
+        KeyCode::Esc | KeyCode::Char('h') => {
+            app.pop_up();
+        }
+
         KeyCode::Char(':') => {
             app.input_mode = InputMode::Command;
             app.command_input.clear();
         }
+
+        // Enter Editing Mode
         KeyCode::Char('i') => {
-            if app.focused_panel == FocusedPanel::RequestBar {
+            if app.focused_panel == FocusedPanel::Details {
                 app.input_mode = InputMode::Editing;
             }
         }
+        
         _ => {}
     }
 }
@@ -31,14 +44,13 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc | KeyCode::Enter => app.input_mode = InputMode::Normal,
         KeyCode::Char(c) => {
-            if app.focused_panel == FocusedPanel::RequestBar {
-                app.url.push(c);
+            // Placeholder for editing logic
+            if app.focused_panel == FocusedPanel::Details {
+                // app.details_content.push(c);
             }
         }
         KeyCode::Backspace => {
-            if app.focused_panel == FocusedPanel::RequestBar {
-                app.url.pop();
-            }
+            // app.details_content.pop();
         }
         _ => {}
     }
