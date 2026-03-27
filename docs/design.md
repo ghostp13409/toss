@@ -6,168 +6,87 @@ A terminal-based API client inspired by Postman, built for keyboard-first workfl
 
 ## Overview
 
-The application is a full-screen TUI (Terminal User Interface) divided into panels. It allows developers to organize API requests into collections, configure request parameters, send HTTP requests, and inspect responses — all without leaving the terminal.
+The application is a full-screen TUI (Terminal User Interface) divided into logical panels. It allows developers to organize API requests into collections, configure request parameters, send HTTP requests, and inspect responses — all without leaving the terminal.
 
 ---
 
-## Design Inspiration
+## Design Inspiration & Layout
 
-The design is heavily inspired by lazydocker and other Rust-based TUIs that prioritize a clean, efficient layout with intuitive keyboard navigation. The goal is to create a tool that feels natural for developers who prefer working in the terminal while still providing powerful features for API testing and exploration.
+The design is heavily inspired by **lazydocker**. It prioritizes a clean, efficient layout with intuitive drill-down keyboard navigation. It should look visually identical to lazydocker in terms of structure, but adapted for an API client use case.
 
-The layout is heavily influenced by Postman’s interface, adapted for a terminal environment. The left side focuses on request organization (collections and APIs), while the right side is dedicated to request configuration and response inspection.
+The layout uses a split-screen approach:
+- **Left Column (30%)**: Dedicated to request organization (Collections and APIs).
+- **Right Column (70%)**: Dedicated to request configuration, editing, and response inspection.
 
-## Layout Structure
+### Visual Layout
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│  Toss 1.0.2                                                         by ghostp134    │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                  [ METHOD ] [ URL INPUT FIELD          ] [ Send ]                   │
-├──────────────────────┬───────────────────┬──────────────────────────────────────────┤
-│  Collections         │  Props            │  Body (Selected Prop.)                   │
-│                      │                   │                                          │
-│  Test Collection     │  > Params         │  {                                       │
-│  └ Test Folder       │  > Authorization  │    "email": "test@admin.com",            │
-│    ├ GET  TestAPi    │  > Headers        │    "password": "test"                    │
-│    ├ POST TestAPi2   │  > Body           │  }                                       │
-│    └ POST TestAPi3   │  > Scripts        │                                          │
-│  Test Collection 2   │  > Settings       │                                          │
-├──────────────────────┼───────────────────┴──────────────────────────────────────────┤
-│  APIs                │  Response              [ 200 OK ]   Props                    │
-│                      │                                                              │
-│  Test Folder         │  {                     > Status Code                         │
-│  ├ GET  TestAPi      │    "id": 45,           > Response Time                       │
-│  ├ POST TestAPi2     │    "email": "...",     > Response Size                       │
-│  └ POST TestAPi3     │    "password": "test"  > Network                             │
-│                      │  }                                                           │
-├──────────────────────┴──────────────────────────────────────────────────────────────┤
-│  Key Bindings:  Switch Tab: tab   Navigate: jkhl   Select: Enter   Send: Ctrl+Enter │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Panels
-
-### Title
-
-- Displays the application name and the version in a stylish way.
-- on the right side, it should show the author name and donate link
-
-### 1. Request Bar (Top)
-
-The persistent top bar that is always visible. shows currently selected HTTP method with a send button
-
-| Element      | Description                                                                                                                               |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Method badge | Displays the HTTP method (e.g. `GET`, `POST`, `PUT`, `DELETE`). Color-coded: GET = green, POST = orange/yellow, PUT = blue, DELETE = red. |
-| URL input    | Editable text field showing the full request URL.                                                                                         |
-| Send button  | Triggers the request.                                                                                                                     |
-
----
-
-### 2. Collections Panel (Top-Left)
-
-Displays saved API collections in a tree structure.
-
-- **Collections** are top-level groups (e.g. `Test Collection`, `Test Collection 2`).
-- **Folders** are sub-groups within a collection (e.g. `Test Folder`).
-- **Requests** are leaf nodes within folders. Each request shows its HTTP method and name.
-
-**Visual conventions:**
-
-- The currently selected folder is highlighted.
-- Request lables should be color-coded by method (e.g., `GET` in green, `POST` in orange/yellow, etc.).
-- Tree indentation.
-
----
-
-### 3. Props Panel (Top-Center)
-
-Displays configurable request properties for the selected request. Each item is a collapsible section toggled via `Enter`.
-
-| Property      | Description                                      |
-| ------------- | ------------------------------------------------ |
-| Params        | URL query parameters                             |
-| Authorization | Auth schemes (Bearer, Basic, API Key, etc.)      |
-| Headers       | Custom request headers                           |
-| Body          | Request body (JSON, form data, raw, etc.)        |
-| Scripts       | Pre-request and post-response scripts            |
-| Settings      | Per-request settings (timeouts, redirects, etc.) |
-
-**Note**: Selected Item should be displayed in the Prop Details Panel Next to it
-
----
-
-### 4. Prop Details Panel (Top-Right)
-
-Displays the content of the currently selected Prop (e.g., the Body).
-
-- Shows a syntax-highlighted preview of the request body.
-- For JSON, displays formatted JSON with proper indentation.
-- Panel label reads `Body (Selected Prop.)` to indicate it reflects the active prop selection.
-
-**Note**: Figure out how to display other options within the perticular prop (e.g., for Body, Select type, Beautify for Raw type, etc.)
-
----
-
-### 5. APIs Panel (Bottom-Left)
-
-Similar to the Collections panel, but scoped to the selected folder's requests and folders only.
-
-- Mirrors the tree structure of the currently active folder.
-- Allows quick navigation between requests without browsing the full collection tree.
-- Useful when working within a single folder for an extended session.
-
----
-
-### 6. Response Panel (Bottom-Center)
-
-Displays the response from the most recent request.
-
-- The status code badge (e.g., `200 OK`) is shown prominently in the panel header.
-  - `2xx` → green badge
-  - `4xx` → orange/red badge
-  - `5xx` → red badge
-- The response body is displayed below with syntax highlighting.
-
-**Example:**
-
-```json
-{
-  "id": 45,
-  "email": "test@admin.com",
-  "password": "test"
-}
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Toss 1.0.0                                                    by ghostp134   │
+├─────────────────────┬────────────────────────────────────────────────────────┤
+│ Collections         │ [GET] https://api.example.com/users           [Send]   │
+│ > Auth Flows        ├────────────────────────────────────────────────────────┤
+│ v Test Folder       │ Properties                                             │
+│   GET  Users        │ > Params                                               │
+│   POST Create User  │ > Headers                                              │
+│                     │ > Body (JSON)                                          │
+│                     ├────────────────────────────────────────────────────────┤
+│ APIs                │ Property Details / Editor                              │
+│ GET Users           │ {                                                      │
+│ POST Create User    │   "username": "admin",                                 │
+│                     │   "password": "password"                               │
+│                     │ }                                                      │
+│                     ├─────────────────────────────────────────┬──────────────┤
+│                     │ Response [200 OK]                       │ Stat         │
+│                     │ {                                       │ Time: 45ms   │
+│                     │   "token": "ey12345..."                 │ Size: 1.2KB  │
+│                     │ }                                       │              │
+├─────────────────────┴─────────────────────────────────────────┴──────────────┤
+│ [Collections] j/k: Navigate | Enter: Select | Esc: Back | Ctrl+Enter: Send   │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 7. Response Stat Panel (Bottom-Right)
+## Panels & Logical Layers
 
-Provides meta-information about the last response.
+The UI is divided into **Logical Layers** to facilitate intuitive drill-down navigation.
 
-| Property      | Description                                            |
-| ------------- | ------------------------------------------------------ |
-| Status Code   | HTTP status code and text (e.g. `200 OK`)              |
-| Response Time | Time taken for the round-trip (ms)                     |
-| Response Size | Size of the response body (bytes/KB)                   |
-| Network       | Protocol details (HTTP/1.1, HTTP/2, TLS version, etc.) |
+### Layer 1: Organization (Left Column)
+- **Collections Panel**: Displays saved API collections in a tree structure. Folders and Requests.
+- **APIs Panel**: Scoped to the selected folder's requests. Allows quick navigation between requests within the active folder.
+
+### Layer 2 & 3: Configuration (Right Column, Top/Middle)
+- **Request Bar**: Shows HTTP method, URL, and a visual Send button indicator.
+- **Properties Panel (Layer 2)**: List of configurable properties for the selected request (Params, Auth, Headers, Body, Scripts, Settings).
+- **Property Details Panel (Layer 3)**: The editor/input area for the currently selected property. E.g., if "Body" is selected in Layer 2, Layer 3 shows the JSON editor.
+
+### Layer 4 & 5: Inspection (Right Column, Bottom)
+- **Response Panel (Layer 4)**: Displays the response body with syntax highlighting and the status code badge.
+- **Response Stat Panel (Layer 5)**: Meta-information (Response Time, Size, Network details).
 
 ---
 
-### 8. Key Bindings Bar (Bottom)
+## Navigation Flow
 
-A persistent footer strip showing helpful keyboard shortcuts.
+The navigation flow uses a "Drill-Down" and "Pop-Up" layer system, similar to Lazydocker or Vim-like directory trees.
 
-| Key          | Action                                         |
-| ------------ | ---------------------------------------------- |
-| `Tab`        | Switch focus between panels                    |
-| `j / k`      | Move down / up within a panel                  |
-| `h / l`      | Move left / right (collapse/expand tree nodes) |
-| `Enter`      | Select the focused item                        |
-| `Ctrl+Enter` | Send the current request                       |
-| `?`          | Open a help menu with all key bindings         |
+1. **Initial State (Layer 1)**: By default, the application starts with the **Collections** panel focused.
+2. **Layer 1 Navigation**: 
+   - `j`/`k` to navigate up and down the tree.
+   - `Tab` cycles focus strictly between the `Collections` and `APIs` panels.
+   - When a folder is highlighted, the `APIs` panel updates to show its contents.
+3. **Drill Down to Layer 2 (Properties)**: 
+   - When the user selects a request (by pressing `Enter` or `l`), focus **automatically shifts** to the **Properties Panel** (Layer 2).
+   - This allows users to immediately configure the request.
+4. **Drill Down to Layer 3 (Details)**: 
+   - From the Properties panel, pressing `Enter` or `l` on a specific property (e.g., Headers or Body) shifts focus to the **Property Details Panel** (Layer 3) to edit the values.
+5. **Pop-Up / Go Back**: 
+   - At any point in Layer 2 or 3, pressing `Esc` or `h` will return focus to the previous layer (e.g., from Details back to Properties, or from Properties back to Collections).
+6. **Execution & Layer 4/5**: 
+   - Pressing `Ctrl+Enter` sends the request.
+   - Upon receiving a response, focus automatically shifts to the **Response Panel** (Layer 4) for immediate inspection.
+   - Pressing `Esc` from the Response panel returns focus to the previously active configuration panel.
 
 ---
 
@@ -182,33 +101,14 @@ A persistent footer strip showing helpful keyboard shortcuts.
 | `2xx` status    | Green                  |
 | `4xx` status    | Orange                 |
 | `5xx` status    | Red                    |
-| Selected item   | Highlighted / bordered |
-| Active panel    | Border color changes   |
-
----
-
-## Navigation Model
-
-- Focus cycles through panels using `Tab`.
-- Within a panel, `j`/`k` move the cursor vertically.
-- `h`/`l` collapse/expand tree nodes in the Collections and APIs panels.
-- `Enter` selects the focused item (e.g., loads a request from Collections into the request bar).
+| Selected item   | Highlighted / reversed |
+| Active panel    | Bold border / accent   |
 
 ---
 
 ## Implementation Notes
 
-- The application should support **mouse interaction** as an optional enhancement over the keyboard-first design.
-- All panels should **resize proportionally** when the terminal window is resized.
-- The Response and Body panels should support **vertical scrolling** for large payloads.
-- Syntax highlighting should be applied to JSON, XML, HTML, and plain text responses.
-- Method badges and status badges use **colored text or background** depending on terminal color support (256-color or truecolor).
-- It should be compatible with both **Windows and Linux** terminals, using `crossterm` for cross-platform terminal handling.
-- The themes and colors should be dynamic with hyprland and other tiling window managers, allowing users to easily integrate it into their existing workflows.
-
-### AI Notes:
-
-- Focus more on the core concepts and reasoning of the design rather than getting every detail perfect. The goal is to create a solid foundation.
-- The design should be flexible enough to allow for future enhancements (e.g., adding more HTTP methods, supporting GraphQL, etc.) without requiring a complete overhaul of the UI.
-- Don't be too strict on the exact layout if it doesn't fit well in the terminal. The key is to maintain a clear separation of concerns between request organization, configuration, and response inspection while optimizing for usability in a terminal environment.
-- Feel free to suggest alternative UI layouts and implementation if you think it would improve the user experience or technical feasibility.
+- **Responsive Design**: The Left/Right split should maintain a 30/70 or 25/75 ratio. The right column should dynamically resize its vertical sections based on content or user preference.
+- **Vim Modes**: While navigating layers, the app operates in `Normal` mode. When editing a URL or a Body field, it enters `Editing` mode where keystrokes are captured as text.
+- **Cross-Platform**: Built with `crossterm` for Windows/Linux compatibility.
+- **Theme Support**: Colors and borders should eventually be configurable.

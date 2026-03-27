@@ -1,93 +1,75 @@
-Building a **Ratatui** application with a Vim-inspired control scheme is a great choice. Power users who prefer the terminal usually have "Vim muscle memory," so aligning with those patterns will make **Toss** feel like a native extension of their workflow.
+# Keyboard Shortcuts & Navigation
 
-Based on your design specification and feature list, here is a suggested keyboard mapping that balances Vim's logic with the specific needs of an API client.
+Toss uses a **Vim-inspired, Lazydocker-style** control scheme. It is designed for power users who prefer keyboard-first navigation without relying on a mouse.
 
----
-
-## 1. Global & Navigation Shortcuts
-
-These should work regardless of which panel is focused (unless you are in an "Insert/Input" mode).
-
-| Key                        | Action                                                                 | Why it's Vim-intuitive                          |
-| :------------------------- | :--------------------------------------------------------------------- | :---------------------------------------------- |
-| `Tab`                      | Cycle focus forward through panels                                     | Standard TUI navigation.                        |
-| `Shift + Tab`              | Cycle focus backward through panels                                    | Standard TUI navigation.                        |
-| `Ctrl + h/j/k/l`           | Direct jump to Left/Down/Up/Right panel                                | Mimics `Ctrl+w` + direction for window jumping. |
-| `w`                        | Cycle focus between the "Request" (Top) and "Response" (Bottom) halves | Similar to jumping between windows.             |
-| `Ctrl + Enter`             | **Send Request**                                                       | High-visibility global trigger.                 |
-| `q` or `KeyboardInterrupt` | Quit / Close Modal / Exit Input Mode                                   | Standard "Escape" behavior.                     |
-| `?` or `leader + h`        | Toggle Help Menu                                                       | Standard TUI convention.                        |
+The application is structured in **Logical Layers**. You navigate *up* and *down* within lists, and *drill down* or *pop up* through layers.
 
 ---
 
-## 2. Panel-Specific Shortcuts
+## 1. Global Shortcuts
 
-### **Collections & APIs Panels** (Tree Navigation)
+These shortcuts work almost everywhere, unless you are actively typing text in an input field (Editing Mode).
 
-- `j / k`: Move cursor up and down.
-- `h / l`: Collapse / Expand folder.
-- `Enter`: Select an Item (e.g., load a request into the Request Bar, open folder, select option, etc.).
-- `a`: **Add** new Request/Folder (opens a small input modal).
+| Key                        | Action                                                                 |
+| :------------------------- | :--------------------------------------------------------------------- |
+| `Ctrl + Enter`             | **Send Request** (Triggers the request and focuses the Response panel) |
+| `q`                        | Quit Application                                                       |
+| `?` or `leader + h`        | Toggle Help Menu                                                       |
+
+---
+
+## 2. Layer Navigation (The Core Flow)
+
+The UI is divided into a Left Column (Layer 1) and Right Column (Layers 2-5).
+
+| Key          | Action                                                                       | Why it makes sense                               |
+| :----------- | :--------------------------------------------------------------------------- | :----------------------------------------------- |
+| `j` / `k`    | Move cursor down/up within the currently focused list.                       | Standard Vim navigation.                         |
+| `Enter` / `l`| **Drill Down / Select**. Moves focus from Layer 1 -> Layer 2, Layer 2 -> Layer 3. | `l` goes "Right" (deeper into the hierarchy).    |
+| `Esc` / `h`  | **Go Back / Pop Up**. Moves focus from Layer 3 -> Layer 2, Layer 2 -> Layer 1.    | `h` goes "Left" (back out of the hierarchy).     |
+| `Tab`        | Cycle focus within the **current layer**. (e.g., Collections ↔ APIs).        | Standard TUI convention for sibling panels.      |
+
+### Example Flow:
+1. Start in **Collections** (Layer 1). Press `j`/`k` to find a request.
+2. Press `Enter` (or `l`). Focus jumps to **Properties** (Layer 2) on the right.
+3. Press `j`/`k` to highlight "Body".
+4. Press `Enter` (or `l`). Focus jumps into the **Property Details** (Layer 3) to edit the JSON body.
+5. Press `Esc` (or `h`) when done editing to return to **Properties** (Layer 2).
+6. Press `Ctrl+Enter` to send. Focus jumps to **Response** (Layer 4).
+
+---
+
+## 3. Context-Specific Shortcuts
+
+### **Layer 1: Collections & APIs Panels**
+- `a`: **Add** new Request/Folder.
 - `r`: **Rename** selected item.
-- `d`: **Delete** selected item (with a "y/n" confirmation).
-- `/`: **Search/Filter** collections (instantly filters the tree as you type).
+- `d`: **Delete** selected item.
+- `/`: **Search/Filter** collections.
+- `Space`: Expand/Collapse a folder (alternative to `l`/`h`).
 
-### **Props & Prop Details Panels** (Configuration)
+### **Layer 2: Properties Panel**
+- `e`: Focus the **URL Input** field in the Request Bar above.
+- `m`: Cycle through **HTTP Methods** (GET → POST → PUT, etc.) for the current request.
 
-- `Enter`: Toggle/Expand a section (Params, Auth, etc.).
-- `i`: Enter **Insert Mode** for the selected field (e.g., editing a Header key).
-- `Tab` (inside Detail): Move between Key and Value fields.
-- `b`: **Beautify** (for the Body prop if set to JSON/XML).
+### **Layer 3: Property Details (Editing)**
+- `i`: Enter **Insert Mode** to type in a text field (if not auto-focused).
+- `b`: **Beautify/Format** the current Body (if JSON/XML).
 - `v`: Open the current Body in your system's `$EDITOR` (e.g., Neovim) for heavy editing.
 
-### **Request Bar** (Top)
-
-- `m`: Cycle through **Methods** (GET → POST → PUT, etc.).
-- `e`: Focus the **URL Input** field for editing.
-
-### **Response Panel** (Bottom)
-
-- `G`: Scroll to the bottom of the response.
-- `gg`: Scroll to the top of the response.
-- `y`: **Yank** (Copy) the entire response body to the system clipboard.
-- `f`: Toggle "Full Screen" for the response (hides top panels to see more data).
+### **Layer 4: Response Panel**
+- `j` / `k`: Scroll response body down/up.
+- `G`: Scroll to the absolute bottom.
+- `gg`: Scroll to the absolute top.
+- `y`: **Yank** (Copy) the entire response body to the clipboard.
+- `f`: Toggle **Full Screen** for the response view.
 
 ---
 
-## 3. The "Vim Power User" Layer
+## 4. Input Modes
 
-To truly make it feel like Vim, consider these state-dependent shortcuts:
+Toss has different state modes to prevent conflicts between navigation and typing:
 
-- **Command Mode (`:`):** If you press `:`, a small command line appears at the bottom.
-  - `:set env [name]` — Quickly switch environment variables.
-  - `:save [name]` — Save the current ad-hoc request to a collection.
-  - `:import [path]` — Trigger the import flow for Postman/Swagger.
-- **Visual Mode for Response:** Allow users to use `v` to start selecting text within the response body to copy specific snippets.
-
----
-
-## 4. The Bottom Shortcut Tip Panel
-
-The bottom bar should only show the "Life Raft" keys—the ones that keep the user from getting stuck. Since screen real estate is limited, keep it high-level.
-
-**Recommended Bottom Bar Display:**
-
-> `Tab` Focus `j/k` Nav `Enter` Select `Ctrl+Enter` Send `/` Search `?` Help `q` Quit
-
----
-
-## Implementation Tip for Ratatui
-
-Since you are using `crossterm` and `tokio`, I recommend implementing an `InputMode` enum in your `app.rs`:
-
-```rust
-enum InputMode {
-    Normal,   // Standard Vim navigation (hjkl, Tab, etc.)
-    Editing,  // Typing in a URL or Header field (ignore hjkl)
-    Command,  // Typing a :command
-}
-```
-
-When `InputMode` is `Normal`, your event handler listens for `j`, `k`, `h`, `l`. When it's `Editing`, it passes all keypresses directly into the string buffer for the active text field. This prevents the user from accidentally jumping panels while trying to type a URL.
-
-**Would you like me to help you draft the `match` statement for your event handler in Rust to handle these different modes?**
+1. **Normal Mode**: The default state. Keys like `j`, `k`, `h`, `l` navigate the UI.
+2. **Editing Mode**: Triggered automatically when entering Layer 3 (Property Details) text inputs, or manually via `i`. Keystrokes are captured as text. Press `Esc` to return to Normal Mode.
+3. **Command Mode (`:`)**: Pressing `:` opens a bottom command line for quick power actions (e.g., `:set env dev`, `:import ./swagger.json`). Press `Enter` to execute or `Esc` to cancel.

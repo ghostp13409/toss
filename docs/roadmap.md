@@ -13,13 +13,14 @@ Build a functional CLI-first tool to handle core networking before adding the TU
 - **HTTP Core**: Integrate `reqwest` for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
 - **Environment System**: Basic JSON/YAML parser for `{{variable}}` substitution.
 
-## Phase 2: The TUI Skeleton & Vim-Navigation
+## Phase 2: The TUI Skeleton & Layered Navigation
 
-Focus on the visual layout and the core "Vim-first" state machine.
+Focus on the visual layout and the core "Vim-first" state machine, adopting a lazydocker-inspired design.
 
 - **Terminal Loop**: Set up `crossterm` and `ratatui` for raw terminal mode and rendering.
-- **Grid Layout**: Implement the 8-panel responsive grid (Request, Collections, Props, Body, APIs, Response, Stats, Footer).
+- **Layered Layout**: Implement the 30/70 split screen with drill-down layers (Collections -> Properties -> Details).
 - **Vim State Machine**: Implement `InputMode` (Normal, Editing, Command) to handle different keyboard contexts.
+- **Drill-Down Navigation**: Implement the logic to shift focus deeper (`Enter`/`l`) or pop up (`Esc`/`h`) between logical layers.
 - **Command Mode (`:`)**: Build the bottom-bar command line for quick actions like `:set env` or `:save`.
 
 ## Phase 3: Data Management, CRUD & Multi-format Imports
