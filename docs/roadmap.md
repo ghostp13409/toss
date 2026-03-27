@@ -1,70 +1,72 @@
 # Roadmap
 
-Developing **Toss** requires a structured approach to balance its high-performance Rust backend with a complex, Vim-inspired TUI. This roadmap breaks the project into logical milestones, starting with the core engine and ending with the distribution-ready CLI.
+Developing **Toss** requires a structured approach to balance its high-performance Rust backend with a complex, Vim-inspired TUI. This roadmap breaks the project into logical milestones, ensuring all "Power User" and "Vim-first" requirements are met.
 
 ---
 
-## Phase 1: Foundation & The "Request Engine"
+## Phase 1: Foundation & The "Request Engine" (Completed)
 
-The first goal is to build a functional CLI-first tool that can send requests before building the visual TUI layers.
+Build a functional CLI-first tool to handle core networking before adding the TUI layer.
 
-- **Project Scaffolding**: Initialize the Rust project and set up `tokio` as the asynchronous runtime.
-- **CLI Argument Parsing**: Implement `clap` to handle basic commands like `toss send` and global flags.
-- **HTTP Core**: Integrate `reqwest` to handle the primary REST methods: `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
-- **Environment Setup**: Create a basic JSON/YAML parser to handle global and environment-specific variables.
+- **Project Scaffolding**: Initialize Rust project with `tokio` async runtime.
+- **CLI Argument Parsing**: Implement `clap` for `toss send` and global flags.
+- **HTTP Core**: Integrate `reqwest` for `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
+- **Environment System**: Basic JSON/YAML parser for `{{variable}}` substitution.
 
-## Phase 2: The TUI Skeleton (Ratatui)
+## Phase 2: The TUI Skeleton & Vim-Navigation
 
-This phase focuses on the visual layout and the immediate-mode rendering engine.
+Focus on the visual layout and the core "Vim-first" state machine.
 
-- **Terminal Loop**: Set up `crossterm` for the event loop and raw terminal mode.
-- **Grid Layout**: Build the 8-panel layout specified in the design docs:
-  - **Top**: Request Bar (Method/URL).
-  - **Middle Row**: Collections, Props, and Prop Details (Body).
-  - **Bottom Row**: APIs, Response, and Response Stat.
-  - **Footer**: Key Bindings Bar.
-- **Vim-Navigation**: Implement the `InputMode` state machine to switch between "Normal" navigation (`hjkl`, `Tab`) and "Editing" mode for input fields.
+- **Terminal Loop**: Set up `crossterm` and `ratatui` for raw terminal mode and rendering.
+- **Grid Layout**: Implement the 8-panel responsive grid (Request, Collections, Props, Body, APIs, Response, Stats, Footer).
+- **Vim State Machine**: Implement `InputMode` (Normal, Editing, Command) to handle different keyboard contexts.
+- **Command Mode (`:`)**: Build the bottom-bar command line for quick actions like `:set env` or `:save`.
 
-## Phase 3: Data Management & Collections
+## Phase 3: Data Management, CRUD & Multi-format Imports
 
-Organizing requests into a persistent tree structure is essential for a professional workflow.
+Organize requests into a persistent tree structure with full management capabilities.
 
-- **Tree Implementation**: Develop the logic for the Collections and APIs panels to display folders and nested requests.
-- **Postman Integration**: Use the `postman_collection` crate to allow users to import and export existing data.
-- **Persistence Layer**: Implement local storage (JSON files or SQLite) to save user collections and history between sessions.
+- **Tree Implementation**: Build the Collections and APIs panels with nested folder support.
+- **CRUD Operations**: Implement `a` (Add), `r` (Rename), and `d` (Delete) functionality within the trees.
+- **Search & Filter (`/`)**: Add real-time tree filtering for large collections.
+- **Multi-format Support**: Integrate `postman_collection` and build parsers for **Insomnia** and **Swagger/OpenAPI**.
+- **Persistence Layer**: Implement local storage (JSON or SQLite) for history and collections.
 
-## Phase 4: Advanced REST & Syntax Highlighting
+## Phase 4: Advanced REST, Highlighting & Editor Integration
 
-This milestone transforms the tool from a basic utility into a high-end developer tool.
+Transform the tool into a high-end developer environment.
 
-- **Authentication Suites**: Add support for Bearer tokens, Basic auth, API Keys, and OAuth1-2.
-- **Rich Body Support**: Build editors for `form-data`, `x-www-form-urlencoded`, and `raw` JSON/GraphQL.
-- **Beautification & Highlighting**: Integrate `syntect` into the Response Panel to provide syntax highlighting for JSON, XML, and HTML.
-- **Response Stats**: Calculate and display response time (ms), payload size, and network protocol details in the dedicated Stat Panel.
+- **Authentication Suites**: Full support for Bearer, Basic, API Keys, and OAuth1-2.
+- **Rich Body & Beautification**: Support for `form-data`, `x-www-form-urlencoded`, and JSON/GraphQL.
+- **Syntax Highlighting**: Integrate `syntect` for both the Response and Body (Selected Prop) panels.
+- **External Editor (`v`)**: Allow opening the request body in the user's system `$EDITOR` (e.g., Neovim).
+- **Response Stats**: Real-time calculation of response time, size, and protocol details.
 
-## Phase 5: CLI Mode & Automation
+## Phase 5: CLI Mode, Automation & Scripting
 
-Expanding the CLI allows for integration into CI/CD pipelines and automated testing.
+Expand the CLI for CI/CD and implement the scripting engine.
 
-- **`toss run` Subcommand**: Develop a collection runner that executes a folder of requests in sequence.
-- **Scripting Engine**: Implement support for pre-request and post-request JavaScript snippets.
-- **Result Reporting**: Create a summary output for the CLI that reports success/failure counts for automated runs.
+- **`toss run` Subcommand**: A high-performance collection runner (Postman's *Newman* equivalent).
+- **Scripting Engine**: Integrate a JavaScript runtime (e.g., `deno_core` or `boa`) for pre-request/post-response logic.
+- **Result Reporting**: Summary outputs and exit codes for automated testing pipelines.
 
-## Phase 6: Optimization & Polish
+## Phase 6: Configuration, Optimization & Polish
 
-Final steps to ensure Toss is fast and works across multiple platforms.
+Final tuning for performance and user customization.
 
-- **Cross-Platform Validation**: Ensure the terminal drawing works consistently on Windows and Linux.
-- **Performance Tuning**: Optimize the `syntect` rendering for large JSON files to prevent TUI lag.
-- **Customizable Keybindings**: Move keybindings into a configuration file so users can adjust the Vim-inspired defaults.
+- **Full Configuration System**: Move themes, layouts, and global settings to a YAML/TOML config file.
+- **Dynamic Themes**: Support for terminal colors and custom TUI styling.
+- **Performance Tuning**: Optimize `syntect` rendering and tree traversal for massive collections.
+- **Cross-Platform Validation**: Ensure consistent behavior across Windows, Linux, and future macOS support.
 
 ---
 
 ### Project Complexity Overview
 
-| Phase | Main Focus | Risk Level | Primary Crate        |
-| :---- | :--------- | :--------- | :------------------- |
-| **1** | Networking | Low        | `reqwest`            |
-| **2** | UI Layout  | Medium     | `ratatui`            |
-| **3** | Tree State | High       | `postman_collection` |
-| **4** | UI Polish  | Medium     | `syntect`            |
+| Phase | Main Focus | Risk Level | Primary Crate |
+| :--- | :--- | :--- | :--- |
+| **1** | Networking | Low | `reqwest` |
+| **2** | Vim-UX / UI | Medium | `ratatui` |
+| **3** | Tree / Data | High | `serde` / `postman_collection` |
+| **4** | Editor / DX | Medium | `syntect` |
+| **5** | Scripting | High | `deno_core` / `boa` |
