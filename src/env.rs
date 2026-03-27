@@ -5,6 +5,7 @@ use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Environment {
+    #[serde(default)]
     pub name: String,
     pub variables: HashMap<String, String>,
 }

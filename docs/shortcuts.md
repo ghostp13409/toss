@@ -8,15 +8,15 @@ Based on your design specification and feature list, here is a suggested keyboar
 
 These should work regardless of which panel is focused (unless you are in an "Insert/Input" mode).
 
-| Key                                 | Action                                                                 | Why it's Vim-intuitive                          |
-| :---------------------------------- | :--------------------------------------------------------------------- | :---------------------------------------------- |
-| `Tab`                               | Cycle focus forward through panels                                     | Standard TUI navigation.                        |
-| `Shift + Tab`                       | Cycle focus backward through panels                                    | Standard TUI navigation.                        |
-| `Ctrl + h/j/k/l`                    | Direct jump to Left/Down/Up/Right panel                                | Mimics `Ctrl+w` + direction for window jumping. |
-| `leader + w`                        | Cycle focus between the "Request" (Top) and "Response" (Bottom) halves | Similar to jumping between windows.             |
-| `Ctrl + Enter`                      | **Send Request**                                                       | High-visibility global trigger.                 |
-| `leader + q` or `KeyboardInterrupt` | Quit / Close Modal / Exit Input Mode                                   | Standard "Escape" behavior.                     |
-| `?` or `leader + h`                 | Toggle Help Menu                                                       | Standard TUI convention.                        |
+| Key                        | Action                                                                 | Why it's Vim-intuitive                          |
+| :------------------------- | :--------------------------------------------------------------------- | :---------------------------------------------- |
+| `Tab`                      | Cycle focus forward through panels                                     | Standard TUI navigation.                        |
+| `Shift + Tab`              | Cycle focus backward through panels                                    | Standard TUI navigation.                        |
+| `Ctrl + h/j/k/l`           | Direct jump to Left/Down/Up/Right panel                                | Mimics `Ctrl+w` + direction for window jumping. |
+| `w`                        | Cycle focus between the "Request" (Top) and "Response" (Bottom) halves | Similar to jumping between windows.             |
+| `Ctrl + Enter`             | **Send Request**                                                       | High-visibility global trigger.                 |
+| `q` or `KeyboardInterrupt` | Quit / Close Modal / Exit Input Mode                                   | Standard "Escape" behavior.                     |
+| `?` or `leader + h`        | Toggle Help Menu                                                       | Standard TUI convention.                        |
 
 ---
 
