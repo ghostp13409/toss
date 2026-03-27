@@ -37,6 +37,22 @@ enum Commands {
         /// Path to environment file (JSON or YAML)
         #[arg(short, long)]
         env: Option<String>,
+
+        /// Suppress all output except the actual response body
+        #[arg(long)]
+        silent: bool,
+
+        /// Force the output to be raw JSON, disabling fancy formatting
+        #[arg(long)]
+        json: bool,
+
+        /// Print only the response headers
+        #[arg(long)]
+        headers_only: bool,
+
+        /// Validate parameters and variables without sending the request
+        #[arg(long)]
+        offline: bool,
     },
 }
 
@@ -73,6 +89,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             body,
             header,
             env,
+            silent,
+            json: json_flag,
+            headers_only,
+            offline,
         } => {
             let environment = if let Some(path) = env {
                 Environment::from_file(path)?
@@ -93,15 +113,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            if offline {
+                println!("--- OFFLINE MODE ---");
+                println!("Method: {:?}", method);
+                println!("URL: {}", final_url);
+                println!("Headers: {:#?}", final_headers);
+                if let Some(b) = final_body {
+                    println!("Body:\n{}", b);
+                }
+                return Ok(());
+            }
+
             let engine = RequestEngine::new();
             let response = engine
                 .send(method.into(), &final_url, final_headers, final_body)
                 .await?;
 
-            println!("Status: {}", response.status());
-            println!("Headers: {:#?}", response.headers());
+            if !silent && !headers_only {
+                println!("Status: {}", response.status());
+            }
+
+            if headers_only {
+                println!("{:#?}", response.headers());
+                return Ok(());
+            }
+
+            if !silent {
+                println!("Headers: {:#?}", response.headers());
+            }
+
             let body_text = response.text().await?;
-            println!("Body:\n{}", body_text);
+
+            if json_flag {
+                // If the user requested raw JSON output, we print the raw body.
+                // Alternatively, we could attempt to parse and print it, but raw is often better for piping to jq.
+                println!("{}", body_text);
+            } else if !silent {
+                println!("Body:\n{}", body_text);
+            } else {
+                // Silent mode only prints the body
+                print!("{}", body_text);
+            }
         }
     }
 
