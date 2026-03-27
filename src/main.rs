@@ -2,9 +2,12 @@ mod cli;
 mod core;
 mod engine;
 
+mod tui;
+
 use clap::Parser;
 use cli::args::CliArgs;
 use cli::run_cli;
+use tui::run_tui;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,8 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(command) = args.command {
         run_cli(command).await?;
     } else {
-        // This is where we will eventually launch the TUI
-        println!("TUI mode not yet implemented. Use --help for CLI usage.");
+        run_tui()?;
     }
 
     Ok(())
