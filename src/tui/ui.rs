@@ -1,12 +1,13 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect, Margin},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap, Tabs, Row, Table, Cell},
     Frame,
 };
 
-use crate::tui::app::{App, FocusedPanel, InputMode, PendingItemType, RequestBarPart, UiLayer};
+use crate::tui::app::{App, FocusedPanel, InputMode, PendingItemType, RequestBarPart, UiLayer, PropertyTab, PropertyEditorField};
 use crate::cli::args::Method;
+use crate::core::collection::KVParam;
 
 pub fn render(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
@@ -64,33 +65,64 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     // 5. Cursor positioning
     match app.input_mode {
-        InputMode::Editing if app.current_layer == UiLayer::LayerRequestBar && app.active_request_part == RequestBarPart::Url => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(" Request ");
-            let area = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),      // Request Bar
-                    Constraint::Length(8),      // Properties
-                    Constraint::Percentage(40), // Details
-                    Constraint::Min(0),         // Response area
-                ])
-                .split(columns[1])[0];
+        InputMode::Editing => {
+            if app.current_layer == UiLayer::LayerRequestBar && app.active_request_part == RequestBarPart::Url {
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Request ");
+                let area = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3),      // Request Bar
+                        Constraint::Length(3),      // Properties Tabs
+                        Constraint::Percentage(40), // Details
+                        Constraint::Min(0),         // Response area
+                    ])
+                    .split(columns[1])[0];
 
-            let layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Length(10), // Method
-                    Constraint::Min(0),    // URL
-                    Constraint::Length(10), // Send Button
-                ])
-                .split(block.inner(area));
-            
-            f.set_cursor_position((
-                layout[1].x + app.cursor_position as u16,
-                layout[1].y,
-            ));
+                let layout = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Length(10), // Method
+                        Constraint::Min(0),    // URL
+                        Constraint::Length(10), // Send Button
+                    ])
+                    .split(block.inner(area));
+                
+                f.set_cursor_position((
+                    layout[1].x + app.cursor_position as u16,
+                    layout[1].y,
+                ));
+            } else if app.focused_panel == FocusedPanel::Details {
+                // Find cursor position in KV editor
+                if matches!(app.selected_property_tab, PropertyTab::Params | PropertyTab::Headers) {
+                    let area = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Length(3),      // Request Bar
+                            Constraint::Length(3),      // Properties Tabs
+                            Constraint::Percentage(40), // Details
+                            Constraint::Min(0),         // Response area
+                        ])
+                        .split(columns[1])[2];
+                    
+                    let inner_area = Block::default().borders(Borders::ALL).inner(area);
+                    // Header takes 1 line
+                    let x = inner_area.x;
+                    let y = inner_area.y + 1 + app.property_editor_row as u16;
+                    
+                    let offset = match app.property_editor_field {
+                        PropertyEditorField::Key => 5 * inner_area.width / 100,
+                        PropertyEditorField::Value => 35 * inner_area.width / 100,
+                        PropertyEditorField::Description => 65 * inner_area.width / 100,
+                    };
+                    
+                    f.set_cursor_position((
+                        x + offset + app.cursor_position as u16,
+                        y,
+                    ));
+                }
+            }
         }
         InputMode::Rename | InputMode::CreateItem => {
             let area = centered_rect(40, 10, f.area());
@@ -310,7 +342,7 @@ fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
     }).collect();
 
     let collections_list = List::new(collections_items)
-        .block(create_block(" Collections ", app.focused_panel == FocusedPanel::Collections));
+        .block(create_block(" Collections ".to_string(), app.focused_panel == FocusedPanel::Collections));
     f.render_widget(collections_list, chunks[0]);
 
     // APIs Panel using visible items
@@ -346,7 +378,7 @@ fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
     }).collect();
 
     let apis_list = List::new(api_items)
-        .block(create_block(" APIs ", app.focused_panel == FocusedPanel::Apis));
+        .block(create_block(" APIs ".to_string(), app.focused_panel == FocusedPanel::Apis));
     f.render_widget(apis_list, chunks[1]);
 }
 
@@ -355,15 +387,15 @@ fn render_right_column(f: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),      // Request Bar
-            Constraint::Length(8),      // Properties
+            Constraint::Length(3),      // Properties Tabs
             Constraint::Percentage(40), // Details
             Constraint::Min(0),         // Response area
         ])
         .split(area);
 
     render_request_bar(f, app, chunks[0]);
-    f.render_widget(create_block(" Properties ", app.focused_panel == FocusedPanel::Properties), chunks[1]);
-    f.render_widget(create_block(" Property Details / Editor ", app.focused_panel == FocusedPanel::Details), chunks[2]);
+    render_properties_tabs(f, app, chunks[1]);
+    render_details_area(f, app, chunks[2]);
 
     let response_area = Layout::default()
         .direction(Direction::Horizontal)
@@ -373,8 +405,100 @@ fn render_right_column(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(chunks[3]);
 
-    f.render_widget(create_block(" Response ", app.focused_panel == FocusedPanel::Response), response_area[0]);
-    f.render_widget(create_block(" Stat ", false), response_area[1]);
+    f.render_widget(create_block(" Response ".to_string(), app.focused_panel == FocusedPanel::Response), response_area[0]);
+    f.render_widget(create_block(" Stat ".to_string(), false), response_area[1]);
+}
+
+fn render_properties_tabs(f: &mut Frame, app: &App, area: Rect) {
+    let titles = vec![" Params ", " Headers ", " Auth ", " Body ", " Scripts "];
+    let selected_idx = match app.selected_property_tab {
+        PropertyTab::Params => 0,
+        PropertyTab::Headers => 1,
+        PropertyTab::Auth => 2,
+        PropertyTab::Body => 3,
+        PropertyTab::Scripts => 4,
+    };
+
+    let tabs = Tabs::new(titles)
+        .block(create_block(" Properties ".to_string(), app.focused_panel == FocusedPanel::Properties))
+        .select(selected_idx)
+        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .divider("|");
+    
+    f.render_widget(tabs, area);
+}
+
+fn render_details_area(f: &mut Frame, app: &App, area: Rect) {
+    match app.selected_property_tab {
+        PropertyTab::Params => {
+            let params = app.get_current_request().map(|r| r.params.clone()).unwrap_or_default();
+            render_kv_editor(f, app, area, " Query Parameters ".to_string(), &params);
+        }
+        PropertyTab::Headers => {
+            let headers = app.get_current_request().map(|r| r.headers.clone()).unwrap_or_default();
+            render_kv_editor(f, app, area, " Headers ".to_string(), &headers);
+        }
+        PropertyTab::Auth => {
+            let block = create_block(" Auth ".to_string(), app.focused_panel == FocusedPanel::Details);
+            f.render_widget(Paragraph::new(" Auth configuration coming soon "), area.inner(Margin { vertical: 1, horizontal: 1 }));
+            f.render_widget(block, area);
+        }
+        PropertyTab::Body => {
+            let block = create_block(" Body ".to_string(), app.focused_panel == FocusedPanel::Details);
+            f.render_widget(Paragraph::new(" Body editor coming soon "), area.inner(Margin { vertical: 1, horizontal: 1 }));
+            f.render_widget(block, area);
+        }
+        PropertyTab::Scripts => {
+            let block = create_block(" Scripts ".to_string(), app.focused_panel == FocusedPanel::Details);
+            f.render_widget(Paragraph::new(" Scripts editor coming soon "), area.inner(Margin { vertical: 1, horizontal: 1 }));
+            f.render_widget(block, area);
+        }
+    }
+}
+
+fn render_kv_editor(f: &mut Frame, app: &App, area: Rect, title: String, items: &[KVParam]) {
+    let block = create_block(title, app.focused_panel == FocusedPanel::Details);
+    
+    let header_cells = ["", "Key", "Value", "Description"]
+        .iter()
+        .map(|h| Cell::from(*h).style(Style::default().add_modifier(Modifier::BOLD)));
+    let header = Row::new(header_cells).height(1).bottom_margin(0);
+
+    let rows: Vec<Row> = items.iter().enumerate().map(|(i, item)| {
+        let is_row_focused = app.focused_panel == FocusedPanel::Details && app.property_editor_row == i;
+        
+        let check = if item.enabled { "[x]" } else { "[ ]" };
+        
+        let mut cells = vec![
+            Cell::from(check),
+            Cell::from(item.key.as_str()),
+            Cell::from(item.value.as_str()),
+            Cell::from(item.description.as_deref().unwrap_or("")),
+        ];
+
+        if is_row_focused {
+            let field_idx = match app.property_editor_field {
+                PropertyEditorField::Key => 1,
+                PropertyEditorField::Value => 2,
+                PropertyEditorField::Description => 3,
+            };
+            cells[field_idx] = cells[field_idx].clone().style(Style::default().add_modifier(Modifier::REVERSED));
+        }
+
+        Row::new(cells)
+    }).collect();
+
+    let table = Table::new(rows, [
+        Constraint::Percentage(5),
+        Constraint::Percentage(30),
+        Constraint::Percentage(30),
+        Constraint::Percentage(35),
+    ])
+    .header(header)
+    .block(block)
+    .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    f.render_widget(table, area);
 }
 
 fn render_request_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -491,6 +615,8 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 "Tab: Cycle | Enter: Open | /: Filter | Space: Toggle | a: Req | f: Folder | n: Collection | r: Rename | d: Delete".to_string()
             }
             FocusedPanel::RequestBar => "[Request] Tab: Cycle Controls | Enter: Trigger | Esc: Back".to_string(),
+            FocusedPanel::Properties => "h/l: Switch Tabs | j/k: Nav Rows | Enter: Edit | a: Add | d: Delete | Esc: Back".to_string(),
+            FocusedPanel::Details => "Esc: Back | Enter: Confirm | Arrows: Nav Field".to_string(),
             _ => "Tab: Cycle | Esc: Back | Ctrl+Enter: Send".to_string(),
         }
     };
@@ -499,7 +625,7 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(p, area);
 }
 
-fn create_block(title: &'static str, focused: bool) -> Block<'static> {
+fn create_block(title: String, focused: bool) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
         .title(title)

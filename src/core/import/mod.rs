@@ -1,5 +1,5 @@
 pub mod postman;
 
-pub fn import_collection<P: AsRef<std::path::Path>>(path: P) -> Result<crate::core::collection::Collection, Box<dyn std::error::Error>> {
+pub fn import_collection<P: AsRef<std::path::Path>>(path: P) -> anyhow::Result<crate::core::collection::Collection> {
     postman::import_postman(path)
 }

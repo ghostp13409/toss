@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use crate::cli::args::Method;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -28,13 +27,41 @@ pub struct Folder {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct KVParam {
+    pub key: String,
+    pub value: String,
+    pub enabled: bool,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum Auth {
+    None,
+    Bearer { token: String },
+    Basic { username: String, password: String },
+    ApiKey { key: String, value: String, in_header: bool },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum RequestBody {
+    None,
+    Raw { content: String, content_type: String },
+    FormData { items: Vec<KVParam> },
+    XWwwFormUrlEncoded { items: Vec<KVParam> },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Request {
     pub id: String,
     pub name: String,
     pub method: Method,
     pub url: String,
-    pub headers: HashMap<String, String>,
-    pub body: Option<String>,
+    pub params: Vec<KVParam>,
+    pub headers: Vec<KVParam>,
+    pub auth: Auth,
+    pub body: RequestBody,
+    pub pre_request_script: Option<String>,
+    pub post_response_script: Option<String>,
 }
 
 impl Collection {
@@ -50,6 +77,15 @@ impl Collection {
     pub fn find_request_mut(&mut self, id: &str) -> Option<&mut Request> {
         for item in &mut self.items {
             if let Some(req) = item.find_request_mut(id) {
+                return Some(req);
+            }
+        }
+        None
+    }
+
+    pub fn find_request(&self, id: &str) -> Option<&Request> {
+        for item in &self.items {
+            if let Some(req) = item.find_request(id) {
                 return Some(req);
             }
         }
@@ -89,6 +125,26 @@ impl CollectionItem {
         }
     }
 
+    pub fn find_request(&self, id: &str) -> Option<&Request> {
+        match self {
+            CollectionItem::Request(req) => {
+                if req.id == id {
+                    Some(req)
+                } else {
+                    None
+                }
+            }
+            CollectionItem::Folder(f) => {
+                for item in &f.items {
+                    if let Some(req) = item.find_request(id) {
+                        return Some(req);
+                    }
+                }
+                None
+            }
+        }
+    }
+
     #[allow(dead_code)]
     pub fn name(&self) -> &str {
         match self {
@@ -102,6 +158,23 @@ impl CollectionItem {
         match self {
             CollectionItem::Folder(f) => f.name = name,
             CollectionItem::Request(r) => r.name = name,
+        }
+    }
+}
+
+impl Request {
+    pub fn new(name: String, method: Method, url: String) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            method,
+            url,
+            params: Vec::new(),
+            headers: Vec::new(),
+            auth: Auth::None,
+            body: RequestBody::None,
+            pre_request_script: None,
+            post_response_script: None,
         }
     }
 }

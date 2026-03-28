@@ -1,61 +1,37 @@
-use crate::core::collection::{Collection, CollectionItem, Folder, Request};
+use crate::core::collection::{Collection, CollectionItem, Request, Folder, KVParam, RequestBody, Auth};
 use crate::cli::args::Method;
-use std::collections::HashMap;
+use serde_json::Value;
+use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-struct PmCollection {
-    info: PmInfo,
-    item: Vec<PmItem>,
+pub fn import_postman<P: AsRef<Path>>(path: P) -> anyhow::Result<Collection> {
+    let content = fs::read_to_string(path)?;
+    import_postman_collection(&content)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct PmInfo {
-    name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct PmItem {
-    name: Option<String>,
-    request: Option<PmRequest>,
-    item: Option<Vec<PmItem>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct PmRequest {
-    method: String,
-    url: serde_json::Value,
-    header: Option<serde_json::Value>,
-    body: Option<PmBody>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct PmBody {
-    raw: Option<String>,
-}
-
-pub fn import_postman<P: AsRef<Path>>(path: P) -> Result<Collection, Box<dyn std::error::Error>> {
-    let content = std::fs::read_to_string(path)?;
-    let pm: PmCollection = serde_json::from_str(&content)?;
+pub fn import_postman_collection(json_str: &str) -> anyhow::Result<Collection> {
+    let v: Value = serde_json::from_str(json_str)?;
     
-    let mut items = Vec::new();
-    for item in pm.item {
-        items.push(convert_item(item));
+    let name = v["info"]["name"].as_str().unwrap_or("Imported Collection").to_string();
+    let mut collection = Collection::new(name);
+
+    if let Some(items) = v["item"].as_array() {
+        for item in items {
+            if let Some(c_item) = parse_item(item) {
+                collection.items.push(c_item);
+            }
+        }
     }
-    
-    Ok(Collection {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: pm.info.name,
-        items,
-        expanded: false,
-    })
+
+    Ok(collection)
 }
 
-fn convert_item(pm_item: PmItem) -> CollectionItem {
-    if let Some(request) = pm_item.request {
-        let method = match request.method.to_uppercase().as_str() {
-            "GET" => Method::Get,
+fn parse_item(item: &Value) -> Option<CollectionItem> {
+    let name = item["name"].as_str().unwrap_or("Unnamed").to_string();
+
+    if let Some(request) = item.get("request") {
+        let method_str = request["method"].as_str().unwrap_or("GET");
+        let method = match method_str.to_uppercase().as_str() {
             "POST" => Method::Post,
             "PUT" => Method::Put,
             "PATCH" => Method::Patch,
@@ -63,48 +39,68 @@ fn convert_item(pm_item: PmItem) -> CollectionItem {
             _ => Method::Get,
         };
 
-        let url = if request.url.is_string() {
-            request.url.as_str().unwrap_or_default().to_string()
-        } else if let Some(raw) = request.url.get("raw") {
-            raw.as_str().unwrap_or_default().to_string()
+        let url = if let Some(url_val) = request.get("url") {
+            if let Some(raw) = url_val.get("raw") {
+                raw.as_str().unwrap_or("").to_string()
+            } else if let Some(url_str) = url_val.as_str() {
+                url_str.to_string()
+            } else {
+                String::new()
+            }
         } else {
             String::new()
         };
 
-        let mut headers = HashMap::new();
-        if let Some(h_val) = request.header {
-            if let Some(arr) = h_val.as_array() {
-                for h in arr {
-                    if let (Some(k), Some(v)) = (h.get("key"), h.get("value")) {
-                        headers.insert(k.as_str().unwrap_or_default().to_string(), v.as_str().unwrap_or_default().to_string());
-                    }
+        let mut headers = Vec::new();
+        if let Some(header_array) = request.get("header") {
+            if let Some(headers_list) = header_array.as_array() {
+                for h in headers_list {
+                    headers.push(KVParam {
+                        key: h["key"].as_str().unwrap_or("").to_string(),
+                        value: h["value"].as_str().unwrap_or("").to_string(),
+                        enabled: !h["disabled"].as_bool().unwrap_or(false),
+                        description: h["description"].as_str().map(|s| s.to_string()),
+                    });
                 }
             }
         }
 
-        let body = request.body.and_then(|b| b.raw);
+        let body = if let Some(body_val) = request.get("body") {
+            if body_val["mode"] == "raw" {
+                RequestBody::Raw {
+                    content: body_val["raw"].as_str().unwrap_or("").to_string(),
+                    content_type: body_val["options"]["raw"]["language"].as_str().unwrap_or("json").to_string(),
+                }
+            } else {
+                RequestBody::None
+            }
+        } else {
+            RequestBody::None
+        };
 
-        CollectionItem::Request(Request {
+        Some(CollectionItem::Request(Request {
             id: uuid::Uuid::new_v4().to_string(),
-            name: pm_item.name.unwrap_or_else(|| "Unnamed Request".to_string()),
+            name,
             method,
             url,
             headers,
+            params: Vec::new(),
+            auth: Auth::None,
             body,
-        })
-    } else {
-        let mut items = Vec::new();
-        if let Some(pm_items) = pm_item.item {
-            for item in pm_items {
-                items.push(convert_item(item));
+            pre_request_script: None,
+            post_response_script: None,
+        }))
+    } else if let Some(items) = item.get("item") {
+        let mut folder = Folder::new(name);
+        if let Some(item_array) = items.as_array() {
+            for it in item_array {
+                if let Some(c_item) = parse_item(it) {
+                    folder.items.push(c_item);
+                }
             }
         }
-
-        CollectionItem::Folder(Folder {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: pm_item.name.unwrap_or_else(|| "Unnamed Folder".to_string()),
-            items,
-            expanded: false,
-        })
+        Some(CollectionItem::Folder(folder))
+    } else {
+        None
     }
 }

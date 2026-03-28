@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::app::{App, InputMode, UiLayer, FocusedPanel, RequestBarPart, PendingItemType};
+use crate::tui::app::{App, InputMode, UiLayer, FocusedPanel, RequestBarPart, PendingItemType, PropertyTab, PropertyEditorField};
 use crate::cli::args::Method;
 
 pub fn handle_input(app: &mut App, key: KeyEvent) {
@@ -175,6 +175,21 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                         app.selected_api_index += 1;
                     }
                 }
+                FocusedPanel::Properties => {
+                    app.drill_down();
+                }
+                FocusedPanel::Details => {
+                    if let Some(req) = app.get_current_request() {
+                        let max_rows = match app.selected_property_tab {
+                            PropertyTab::Params => req.params.len(),
+                            PropertyTab::Headers => req.headers.len(),
+                            _ => 0,
+                        };
+                        if app.property_editor_row < max_rows.saturating_sub(1) {
+                            app.property_editor_row += 1;
+                        }
+                    }
+                }
                 FocusedPanel::Response => {
                     // Navigate response if needed
                 }
@@ -194,12 +209,48 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                         app.selected_api_index -= 1;
                     }
                 }
+                FocusedPanel::Details => {
+                    if app.property_editor_row > 0 {
+                        app.property_editor_row -= 1;
+                    } else {
+                        app.pop_up();
+                    }
+                }
                 _ => {}
             }
         }
         
-        KeyCode::Enter | KeyCode::Char('l') => {
-            if app.current_layer == UiLayer::LayerRequestBar {
+        KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+            if app.focused_panel == FocusedPanel::Properties {
+                app.next_property_tab();
+            } else if app.focused_panel == FocusedPanel::Details {
+                match app.selected_property_tab {
+                    PropertyTab::Params | PropertyTab::Headers => {
+                        if key.code == KeyCode::Right {
+                            app.property_editor_field = match app.property_editor_field {
+                                PropertyEditorField::Key => PropertyEditorField::Value,
+                                PropertyEditorField::Value => PropertyEditorField::Description,
+                                PropertyEditorField::Description => PropertyEditorField::Description,
+                            };
+                        } else {
+                            // Enter: start editing
+                            app.input_mode = InputMode::Editing;
+                            let current_val = if let Some(req) = app.get_current_request() {
+                                let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                                if let Some(p) = target.get(app.property_editor_row) {
+                                    match app.property_editor_field {
+                                        PropertyEditorField::Key => p.key.clone(),
+                                        PropertyEditorField::Value => p.value.clone(),
+                                        PropertyEditorField::Description => p.description.clone().unwrap_or_default(),
+                                    }
+                                } else { String::new() }
+                            } else { String::new() };
+                            app.cursor_position = current_val.len();
+                        }
+                    }
+                    _ => {}
+                }
+            } else if app.current_layer == UiLayer::LayerRequestBar {
                 match app.active_request_part {
                     RequestBarPart::Method => {
                         app.show_method_search = true;
@@ -268,8 +319,27 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
         }
         
-        KeyCode::Esc | KeyCode::Char('h') => {
-            app.pop_up();
+        KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => {
+            if app.focused_panel == FocusedPanel::Properties {
+                app.prev_property_tab();
+            } else if app.focused_panel == FocusedPanel::Details {
+                match app.selected_property_tab {
+                    PropertyTab::Params | PropertyTab::Headers => {
+                        if key.code == KeyCode::Left {
+                            app.property_editor_field = match app.property_editor_field {
+                                PropertyEditorField::Key => PropertyEditorField::Key,
+                                PropertyEditorField::Value => PropertyEditorField::Key,
+                                PropertyEditorField::Description => PropertyEditorField::Value,
+                            };
+                        } else {
+                            app.pop_up();
+                        }
+                    }
+                    _ => app.pop_up(),
+                }
+            } else {
+                app.pop_up();
+            }
         }
 
         KeyCode::Char('p') => {
@@ -282,6 +352,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char(' ') => {
             if app.focused_panel == FocusedPanel::Apis || app.focused_panel == FocusedPanel::Collections {
                 app.toggle_folder();
+            } else if app.focused_panel == FocusedPanel::Details {
+                app.toggle_kv_param();
             }
         }
 
@@ -305,6 +377,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.pending_item_type = Some(PendingItemType::Request);
                 app.rename_input.clear();
                 app.cursor_position = 0;
+            } else if app.focused_panel == FocusedPanel::Details {
+                app.add_kv_param();
             }
         }
 
@@ -344,7 +418,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Char('d') => {
-            app.input_mode = InputMode::ConfirmDelete;
+            if app.focused_panel == FocusedPanel::Details {
+                app.delete_kv_param();
+            } else {
+                app.input_mode = InputMode::ConfirmDelete;
+            }
         }
 
 
@@ -356,8 +434,23 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         KeyCode::Char('i') => {
             if app.focused_panel == FocusedPanel::Details {
-                app.input_mode = InputMode::Editing;
-                // app.cursor_position initialization for details would go here
+                match app.selected_property_tab {
+                    PropertyTab::Params | PropertyTab::Headers => {
+                        app.input_mode = InputMode::Editing;
+                        let current_val = if let Some(req) = app.get_current_request() {
+                            let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                            if let Some(p) = target.get(app.property_editor_row) {
+                                match app.property_editor_field {
+                                    PropertyEditorField::Key => p.key.clone(),
+                                    PropertyEditorField::Value => p.value.clone(),
+                                    PropertyEditorField::Description => p.description.clone().unwrap_or_default(),
+                                }
+                            } else { String::new() }
+                        } else { String::new() };
+                        app.cursor_position = current_val.len();
+                    }
+                    _ => {}
+                }
             }
         }
         
@@ -369,12 +462,14 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
             app.save_current_request();
-            app.pop_up();
+            app.input_mode = InputMode::Normal;
         }
         KeyCode::Enter => {
             if app.current_layer == UiLayer::LayerRequestBar && app.active_request_part == RequestBarPart::Url {
                 app.save_current_request();
                 app.active_request_part = RequestBarPart::Send;
+                app.input_mode = InputMode::Normal;
+            } else if app.focused_panel == FocusedPanel::Details {
                 app.input_mode = InputMode::Normal;
             } else {
                 app.save_current_request();
@@ -382,10 +477,29 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
             }
         },
         KeyCode::Tab => {
-            app.save_current_request();
-            app.next_panel();
-            if app.active_request_part == RequestBarPart::Url {
-                app.cursor_position = app.url.len();
+            if app.focused_panel == FocusedPanel::Details {
+                app.property_editor_field = match app.property_editor_field {
+                    PropertyEditorField::Key => PropertyEditorField::Value,
+                    PropertyEditorField::Value => PropertyEditorField::Description,
+                    PropertyEditorField::Description => PropertyEditorField::Key,
+                };
+                let current_val = if let Some(req) = app.get_current_request() {
+                    let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                    if let Some(p) = target.get(app.property_editor_row) {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => p.key.clone(),
+                            PropertyEditorField::Value => p.value.clone(),
+                            PropertyEditorField::Description => p.description.clone().unwrap_or_default(),
+                        }
+                    } else { String::new() }
+                } else { String::new() };
+                app.cursor_position = current_val.len();
+            } else {
+                app.save_current_request();
+                app.next_panel();
+                if app.active_request_part == RequestBarPart::Url {
+                    app.cursor_position = app.url.len();
+                }
             }
         }
         KeyCode::Char(c) => {
@@ -393,6 +507,20 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                 let mut s = app.url.clone();
                 app.insert_char(&mut s, c);
                 app.url = s;
+            } else if app.focused_panel == FocusedPanel::Details {
+                let mut current_val = if let Some(req) = app.get_current_request() {
+                    let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                    if let Some(p) = target.get(app.property_editor_row) {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => p.key.clone(),
+                            PropertyEditorField::Value => p.value.clone(),
+                            PropertyEditorField::Description => p.description.clone().unwrap_or_default(),
+                        }
+                    } else { String::new() }
+                } else { String::new() };
+                
+                app.insert_char(&mut current_val, c);
+                app.update_kv_param(current_val);
             }
         }
         KeyCode::Backspace => {
@@ -400,6 +528,20 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                 let mut s = app.url.clone();
                 app.delete_char(&mut s);
                 app.url = s;
+            } else if app.focused_panel == FocusedPanel::Details {
+                let mut current_val = if let Some(req) = app.get_current_request() {
+                    let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                    if let Some(p) = target.get(app.property_editor_row) {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => p.key.clone(),
+                            PropertyEditorField::Value => p.value.clone(),
+                            PropertyEditorField::Description => p.description.clone().unwrap_or_default(),
+                        }
+                    } else { String::new() }
+                } else { String::new() };
+                
+                app.delete_char(&mut current_val);
+                app.update_kv_param(current_val);
             }
         }
         KeyCode::Delete => {
@@ -407,12 +549,57 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                 let mut s = app.url.clone();
                 app.delete_char_forward(&mut s);
                 app.url = s;
+            } else if app.focused_panel == FocusedPanel::Details {
+                let mut current_val = if let Some(req) = app.get_current_request() {
+                    let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                    if let Some(p) = target.get(app.property_editor_row) {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => p.key.clone(),
+                            PropertyEditorField::Value => p.value.clone(),
+                            PropertyEditorField::Description => p.description.clone().unwrap_or_default(),
+                        }
+                    } else { String::new() }
+                } else { String::new() };
+                
+                app.delete_char_forward(&mut current_val);
+                app.update_kv_param(current_val);
             }
         }
         KeyCode::Left => app.move_cursor_left(),
-        KeyCode::Right => app.move_cursor_right(app.url.len()),
+        KeyCode::Right => {
+            let max = if app.focused_panel == FocusedPanel::Details {
+                if let Some(req) = app.get_current_request() {
+                    let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                    if let Some(p) = target.get(app.property_editor_row) {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => p.key.len(),
+                            PropertyEditorField::Value => p.value.len(),
+                            PropertyEditorField::Description => p.description.as_ref().map(|d| d.len()).unwrap_or(0),
+                        }
+                    } else { 0 }
+                } else { 0 }
+            } else {
+                app.url.len()
+            };
+            app.move_cursor_right(max);
+        },
         KeyCode::Home => app.cursor_position = 0,
-        KeyCode::End => app.cursor_position = app.url.len(),
+        KeyCode::End => {
+            app.cursor_position = if app.focused_panel == FocusedPanel::Details {
+                if let Some(req) = app.get_current_request() {
+                    let target = if app.selected_property_tab == PropertyTab::Params { &req.params } else { &req.headers };
+                    if let Some(p) = target.get(app.property_editor_row) {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => p.key.len(),
+                            PropertyEditorField::Value => p.value.len(),
+                            PropertyEditorField::Description => p.description.as_ref().map(|d| d.len()).unwrap_or(0),
+                        }
+                    } else { 0 }
+                } else { 0 }
+            } else {
+                app.url.len()
+            };
+        }
         _ => {}
     }
 }

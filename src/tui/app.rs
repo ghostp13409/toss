@@ -1,5 +1,5 @@
 use crate::cli::args::Method;
-use crate::core::collection::{Collection, CollectionItem};
+use crate::core::collection::{Collection, CollectionItem, Request, RequestBody, KVParam};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum InputMode {
@@ -46,6 +46,22 @@ pub enum PendingItemType {
     Request,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PropertyTab {
+    Params,
+    Headers,
+    Auth,
+    Body,
+    Scripts,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PropertyEditorField {
+    Key,
+    Value,
+    Description,
+}
+
 pub struct App {
     pub input_mode: InputMode,
     pub current_layer: UiLayer,
@@ -71,6 +87,9 @@ pub struct App {
     pub pending_item_type: Option<PendingItemType>,
     pub error_message: Option<String>,
     pub cursor_position: usize,
+    pub selected_property_tab: PropertyTab,
+    pub property_editor_row: usize,
+    pub property_editor_field: PropertyEditorField,
 }
 
 pub struct VisibleItem {
@@ -118,6 +137,115 @@ impl App {
             pending_item_type: None,
             error_message: None,
             cursor_position: 0,
+            selected_property_tab: PropertyTab::Params,
+            property_editor_row: 0,
+            property_editor_field: PropertyEditorField::Key,
+        }
+    }
+
+    pub fn next_property_tab(&mut self) {
+        self.selected_property_tab = match self.selected_property_tab {
+            PropertyTab::Params => PropertyTab::Headers,
+            PropertyTab::Headers => PropertyTab::Auth,
+            PropertyTab::Auth => PropertyTab::Body,
+            PropertyTab::Body => PropertyTab::Scripts,
+            PropertyTab::Scripts => PropertyTab::Params,
+        };
+        self.property_editor_row = 0;
+        self.property_editor_field = PropertyEditorField::Key;
+    }
+
+    pub fn prev_property_tab(&mut self) {
+        self.selected_property_tab = match self.selected_property_tab {
+            PropertyTab::Params => PropertyTab::Scripts,
+            PropertyTab::Headers => PropertyTab::Params,
+            PropertyTab::Auth => PropertyTab::Headers,
+            PropertyTab::Body => PropertyTab::Auth,
+            PropertyTab::Scripts => PropertyTab::Body,
+        };
+        self.property_editor_row = 0;
+        self.property_editor_field = PropertyEditorField::Key;
+    }
+
+    pub fn get_current_request(&self) -> Option<&Request> {
+        let req_id = self.current_request_id.as_ref()?;
+        let col = self.collections.get(self.active_collection_index)?;
+        col.find_request(req_id)
+    }
+
+    pub fn get_current_request_mut(&mut self) -> Option<&mut Request> {
+        let req_id = self.current_request_id.clone()?;
+        let col = self.collections.get_mut(self.active_collection_index)?;
+        col.find_request_mut(&req_id)
+    }
+
+    pub fn add_kv_param(&mut self) {
+        let tab = self.selected_property_tab;
+        if let Some(req) = self.get_current_request_mut() {
+            let target = match tab {
+                PropertyTab::Params => &mut req.params,
+                PropertyTab::Headers => &mut req.headers,
+                _ => return,
+            };
+            target.push(KVParam {
+                key: String::new(),
+                value: String::new(),
+                enabled: true,
+                description: None,
+            });
+            self.property_editor_row = target.len() - 1;
+            self.property_editor_field = PropertyEditorField::Key;
+        }
+    }
+
+    pub fn delete_kv_param(&mut self) {
+        let tab = self.selected_property_tab;
+        let row = self.property_editor_row;
+        if let Some(req) = self.get_current_request_mut() {
+            let target = match tab {
+                PropertyTab::Params => &mut req.params,
+                PropertyTab::Headers => &mut req.headers,
+                _ => return,
+            };
+            if !target.is_empty() && row < target.len() {
+                target.remove(row);
+                self.property_editor_row = row.saturating_sub(1);
+            }
+        }
+    }
+
+    pub fn update_kv_param(&mut self, value: String) {
+        let tab = self.selected_property_tab;
+        let row = self.property_editor_row;
+        let field = self.property_editor_field;
+        if let Some(req) = self.get_current_request_mut() {
+            let target = match tab {
+                PropertyTab::Params => &mut req.params,
+                PropertyTab::Headers => &mut req.headers,
+                _ => return,
+            };
+            if let Some(param) = target.get_mut(row) {
+                match field {
+                    PropertyEditorField::Key => param.key = value,
+                    PropertyEditorField::Value => param.value = value,
+                    PropertyEditorField::Description => param.description = Some(value),
+                }
+            }
+        }
+    }
+
+    pub fn toggle_kv_param(&mut self) {
+        let tab = self.selected_property_tab;
+        let row = self.property_editor_row;
+        if let Some(req) = self.get_current_request_mut() {
+            let target = match tab {
+                PropertyTab::Params => &mut req.params,
+                PropertyTab::Headers => &mut req.headers,
+                _ => return,
+            };
+            if let Some(param) = target.get_mut(row) {
+                param.enabled = !param.enabled;
+            }
         }
     }
 
@@ -175,6 +303,9 @@ impl App {
             UiLayer::Layer2 => {
                 self.current_layer = UiLayer::Layer3;
                 self.focused_panel = FocusedPanel::Details;
+                // Initialize KV row/field if needed
+                self.property_editor_row = 0;
+                self.property_editor_field = PropertyEditorField::Key;
             }
             _ => {}
         }
@@ -620,14 +751,7 @@ impl App {
                 let target_depth = selected_item.depth;
                 let selected_tree_index = self.selected_collection_index;
                 
-                let new_req = crate::core::collection::Request {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    name,
-                    method: Method::Get,
-                    url: "https://".to_string(),
-                    headers: std::collections::HashMap::new(),
-                    body: None,
-                };
+                let new_req = Request::new(name, Method::Get, "https://".to_string());
 
                 let mut current_idx = 0;
                 for col in &mut self.collections {
@@ -660,14 +784,7 @@ impl App {
         }
 
         if let Some(col) = self.collections.get_mut(self.active_collection_index) {
-            let new_req = crate::core::collection::Request {
-                id: uuid::Uuid::new_v4().to_string(),
-                name,
-                method: Method::Get,
-                url: "https://".to_string(),
-                headers: std::collections::HashMap::new(),
-                body: None,
-            };
+            let new_req = Request::new(name, Method::Get, "https://".to_string());
             
             if let Some((target_name, target_depth)) = target_folder_info {
                 let mut current_idx = 0;
@@ -906,30 +1023,25 @@ impl App {
     }
 
     pub fn load_sample_data(&mut self) {
-        use crate::core::collection::{Folder, Request};
-        use std::collections::HashMap;
-
         let mut collection = Collection::new("Test Collection".to_string());
         
-        let mut folder = Folder::new("Test Folder".to_string());
+        let mut folder = crate::core::collection::Folder::new("Test Folder".to_string());
         folder.expanded = true;
 
-        let req1 = Request {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "GET TestAPI".to_string(),
-            method: Method::Get,
-            url: "https://httpbin.org/get".to_string(),
-            headers: HashMap::new(),
-            body: None,
-        };
+        let req1 = Request::new(
+            "GET TestAPI".to_string(),
+            Method::Get,
+            "https://httpbin.org/get".to_string(),
+        );
 
-        let req2 = Request {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "POST TestAPI2".to_string(),
-            method: Method::Post,
-            url: "https://httpbin.org/post".to_string(),
-            headers: HashMap::new(),
-            body: Some("{\"hello\":\"world\"}".to_string()),
+        let mut req2 = Request::new(
+            "POST TestAPI2".to_string(),
+            Method::Post,
+            "https://httpbin.org/post".to_string(),
+        );
+        req2.body = RequestBody::Raw { 
+            content: "{\"hello\":\"world\"}".to_string(),
+            content_type: "application/json".to_string(),
         };
 
         folder.items.push(CollectionItem::Request(req1));
@@ -937,14 +1049,11 @@ impl App {
 
         collection.items.push(CollectionItem::Folder(folder));
 
-        let req3 = Request {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Root Request".to_string(),
-            method: Method::Get,
-            url: "https://httpbin.org/get".to_string(),
-            headers: HashMap::new(),
-            body: None,
-        };
+        let req3 = Request::new(
+            "Root Request".to_string(),
+            Method::Get,
+            "https://httpbin.org/get".to_string(),
+        );
         collection.items.push(CollectionItem::Request(req3));
         
         self.collections.push(collection);
