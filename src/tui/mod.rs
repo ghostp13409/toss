@@ -23,6 +23,13 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
 
     // create app and run it
     let mut app = App::new();
+    
+    let persistence = crate::core::persistence::PersistenceManager::new();
+    match persistence.load_collections() {
+        Ok(cols) if !cols.is_empty() => app.collections = cols,
+        _ => app.load_sample_data(),
+    }
+
     let res = run_app(&mut terminal, &mut app);
 
     // restore terminal
@@ -32,6 +39,9 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
         LeaveAlternateScreen,
     )?;
     terminal.show_cursor()?;
+
+    // Save data
+    let _ = persistence.save_collections(&app.collections);
 
     if let Err(err) = res {
         println!("{:?}", err)
