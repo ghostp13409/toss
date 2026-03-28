@@ -70,6 +70,7 @@ pub struct App {
     pub rename_input: String,
     pub pending_item_type: Option<PendingItemType>,
     pub error_message: Option<String>,
+    pub cursor_position: usize,
 }
 
 pub struct VisibleItem {
@@ -116,6 +117,7 @@ impl App {
             rename_input: String::new(),
             pending_item_type: None,
             error_message: None,
+            cursor_position: 0,
         }
     }
 
@@ -127,6 +129,36 @@ impl App {
         self.focused_panel = FocusedPanel::RequestBar;
         self.active_request_part = RequestBarPart::Url; // Default to URL
         self.input_mode = InputMode::Editing;
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor_position > 0 {
+            self.cursor_position -= 1;
+        }
+    }
+
+    pub fn move_cursor_right(&mut self, max: usize) {
+        if self.cursor_position < max {
+            self.cursor_position += 1;
+        }
+    }
+
+    pub fn insert_char(&mut self, target: &mut String, c: char) {
+        target.insert(self.cursor_position, c);
+        self.cursor_position += 1;
+    }
+
+    pub fn delete_char(&mut self, target: &mut String) {
+        if self.cursor_position > 0 {
+            target.remove(self.cursor_position - 1);
+            self.cursor_position -= 1;
+        }
+    }
+
+    pub fn delete_char_forward(&mut self, target: &mut String) {
+        if self.cursor_position < target.len() {
+            target.remove(self.cursor_position);
+        }
     }
 
     pub fn drill_down(&mut self) {

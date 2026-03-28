@@ -40,10 +40,25 @@ fn handle_create_item_mode(app: &mut App, key: KeyEvent) {
             app.pending_item_type = None;
             app.rename_input.clear();
         }
-        KeyCode::Char(c) => app.rename_input.push(c),
-        KeyCode::Backspace => {
-            app.rename_input.pop();
+        KeyCode::Char(c) => {
+            let mut s = app.rename_input.clone();
+            app.insert_char(&mut s, c);
+            app.rename_input = s;
         }
+        KeyCode::Backspace => {
+            let mut s = app.rename_input.clone();
+            app.delete_char(&mut s);
+            app.rename_input = s;
+        }
+        KeyCode::Delete => {
+            let mut s = app.rename_input.clone();
+            app.delete_char_forward(&mut s);
+            app.rename_input = s;
+        }
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(app.rename_input.len()),
+        KeyCode::Home => app.cursor_position = 0,
+        KeyCode::End => app.cursor_position = app.rename_input.len(),
         _ => {}
     }
 }
@@ -84,13 +99,27 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) {
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Char(c) => {
-            app.search_query.push(c);
+            let mut s = app.search_query.clone();
+            app.insert_char(&mut s, c);
+            app.search_query = s;
             app.selected_api_index = 0; // Reset index when searching
         }
         KeyCode::Backspace => {
-            app.search_query.pop();
+            let mut s = app.search_query.clone();
+            app.delete_char(&mut s);
+            app.search_query = s;
             app.selected_api_index = 0;
         }
+        KeyCode::Delete => {
+            let mut s = app.search_query.clone();
+            app.delete_char_forward(&mut s);
+            app.search_query = s;
+            app.selected_api_index = 0;
+        }
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(app.search_query.len()),
+        KeyCode::Home => app.cursor_position = 0,
+        KeyCode::End => app.cursor_position = app.search_query.len(),
         _ => {}
     }
 }
@@ -102,10 +131,25 @@ fn handle_rename_mode(app: &mut App, key: KeyEvent) {
             app.rename_selected_item();
             app.input_mode = InputMode::Normal;
         }
-        KeyCode::Char(c) => app.rename_input.push(c),
-        KeyCode::Backspace => {
-            app.rename_input.pop();
+        KeyCode::Char(c) => {
+            let mut s = app.rename_input.clone();
+            app.insert_char(&mut s, c);
+            app.rename_input = s;
         }
+        KeyCode::Backspace => {
+            let mut s = app.rename_input.clone();
+            app.delete_char(&mut s);
+            app.rename_input = s;
+        }
+        KeyCode::Delete => {
+            let mut s = app.rename_input.clone();
+            app.delete_char_forward(&mut s);
+            app.rename_input = s;
+        }
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(app.rename_input.len()),
+        KeyCode::Home => app.cursor_position = 0,
+        KeyCode::End => app.cursor_position = app.rename_input.len(),
         _ => {}
     }
 }
@@ -160,13 +204,17 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                     RequestBarPart::Method => {
                         app.show_method_search = true;
                         app.method_search_query.clear();
+                        app.cursor_position = 0;
                     },
                     RequestBarPart::Send => { 
                         // Simulate Send: Focus response
                         app.current_layer = UiLayer::Layer4;
                         app.focused_panel = FocusedPanel::Response;
                     },
-                    RequestBarPart::Url => app.input_mode = InputMode::Editing,
+                    RequestBarPart::Url => {
+                        app.input_mode = InputMode::Editing;
+                        app.cursor_position = app.url.len();
+                    }
                 }
             } else if app.focused_panel == FocusedPanel::Apis {
                 let visible_items = app.get_visible_items();
@@ -186,6 +234,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                                 }
                             }
                             app.focus_request_bar();
+                            app.cursor_position = app.url.len();
                         }
                         _ => {}
                     }
@@ -210,6 +259,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                                 }
                             }
                             app.focus_request_bar();
+                            app.cursor_position = app.url.len();
                         }
                     }
                 }
@@ -240,11 +290,13 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.input_mode = InputMode::Search;
                 app.show_search = true;
                 app.search_query.clear();
+                app.cursor_position = 0;
             }
         }
 
         KeyCode::Char('e') => {
             app.focus_request_bar();
+            app.cursor_position = app.url.len();
         }
 
         KeyCode::Char('a') => {
@@ -252,6 +304,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.input_mode = InputMode::CreateItem;
                 app.pending_item_type = Some(PendingItemType::Request);
                 app.rename_input.clear();
+                app.cursor_position = 0;
             }
         }
 
@@ -260,6 +313,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.input_mode = InputMode::CreateItem;
                 app.pending_item_type = Some(PendingItemType::Folder);
                 app.rename_input.clear();
+                app.cursor_position = 0;
             }
         }
 
@@ -268,6 +322,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.input_mode = InputMode::CreateItem;
                 app.pending_item_type = Some(PendingItemType::Collection);
                 app.rename_input.clear();
+                app.cursor_position = 0;
             }
         }
 
@@ -285,6 +340,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                     app.rename_input = item.name.clone();
                 }
             }
+            app.cursor_position = app.rename_input.len();
         }
 
         KeyCode::Char('d') => {
@@ -295,11 +351,13 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char(':') => {
             app.input_mode = InputMode::Command;
             app.command_input.clear();
+            app.cursor_position = 0;
         }
 
         KeyCode::Char('i') => {
             if app.focused_panel == FocusedPanel::Details {
                 app.input_mode = InputMode::Editing;
+                // app.cursor_position initialization for details would go here
             }
         }
         
@@ -326,17 +384,35 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Tab => {
             app.save_current_request();
             app.next_panel();
+            if app.active_request_part == RequestBarPart::Url {
+                app.cursor_position = app.url.len();
+            }
         }
         KeyCode::Char(c) => {
             if app.focused_panel == FocusedPanel::RequestBar && app.active_request_part == RequestBarPart::Url {
-                app.url.push(c);
+                let mut s = app.url.clone();
+                app.insert_char(&mut s, c);
+                app.url = s;
             }
         }
         KeyCode::Backspace => {
             if app.focused_panel == FocusedPanel::RequestBar && app.active_request_part == RequestBarPart::Url {
-                app.url.pop();
+                let mut s = app.url.clone();
+                app.delete_char(&mut s);
+                app.url = s;
             }
         }
+        KeyCode::Delete => {
+            if app.focused_panel == FocusedPanel::RequestBar && app.active_request_part == RequestBarPart::Url {
+                let mut s = app.url.clone();
+                app.delete_char_forward(&mut s);
+                app.url = s;
+            }
+        }
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(app.url.len()),
+        KeyCode::Home => app.cursor_position = 0,
+        KeyCode::End => app.cursor_position = app.url.len(),
         _ => {}
     }
 }
@@ -367,11 +443,24 @@ fn handle_method_search_input(app: &mut App, key: KeyEvent) {
             app.method_search_query.clear();
         }
         KeyCode::Char(c) => {
-            app.method_search_query.push(c);
+            let mut s = app.method_search_query.clone();
+            app.insert_char(&mut s, c);
+            app.method_search_query = s;
         }
         KeyCode::Backspace => {
-            app.method_search_query.pop();
+            let mut s = app.method_search_query.clone();
+            app.delete_char(&mut s);
+            app.method_search_query = s;
         }
+        KeyCode::Delete => {
+            let mut s = app.method_search_query.clone();
+            app.delete_char_forward(&mut s);
+            app.method_search_query = s;
+        }
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(app.method_search_query.len()),
+        KeyCode::Home => app.cursor_position = 0,
+        KeyCode::End => app.cursor_position = app.method_search_query.len(),
         _ => {}
     }
 }
@@ -396,10 +485,25 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) {
             app.input_mode = InputMode::Normal;
             app.command_input.clear();
         }
-        KeyCode::Char(c) => app.command_input.push(c),
-        KeyCode::Backspace => {
-            app.command_input.pop();
+        KeyCode::Char(c) => {
+            let mut s = app.command_input.clone();
+            app.insert_char(&mut s, c);
+            app.command_input = s;
         }
+        KeyCode::Backspace => {
+            let mut s = app.command_input.clone();
+            app.delete_char(&mut s);
+            app.command_input = s;
+        }
+        KeyCode::Delete => {
+            let mut s = app.command_input.clone();
+            app.delete_char_forward(&mut s);
+            app.command_input = s;
+        }
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(app.command_input.len()),
+        KeyCode::Home => app.cursor_position = 0,
+        KeyCode::End => app.cursor_position = app.command_input.len(),
         _ => {}
     }
 }

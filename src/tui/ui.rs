@@ -61,6 +61,75 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if let Some(error) = &app.error_message {
         render_error_popup(f, error);
     }
+
+    // 5. Cursor positioning
+    match app.input_mode {
+        InputMode::Editing if app.current_layer == UiLayer::LayerRequestBar && app.active_request_part == RequestBarPart::Url => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(" Request ");
+            let area = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),      // Request Bar
+                    Constraint::Length(8),      // Properties
+                    Constraint::Percentage(40), // Details
+                    Constraint::Min(0),         // Response area
+                ])
+                .split(columns[1])[0];
+
+            let layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(10), // Method
+                    Constraint::Min(0),    // URL
+                    Constraint::Length(10), // Send Button
+                ])
+                .split(block.inner(area));
+            
+            f.set_cursor_position((
+                layout[1].x + app.cursor_position as u16,
+                layout[1].y,
+            ));
+        }
+        InputMode::Rename | InputMode::CreateItem => {
+            let area = centered_rect(40, 10, f.area());
+            f.set_cursor_position((
+                area.x + 1 + app.cursor_position as u16,
+                area.y + 1,
+            ));
+        }
+        InputMode::Search if app.show_search => {
+            let sidebar_area = columns[0];
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(3),
+                ])
+                .split(sidebar_area);
+            let area = chunks[1];
+            f.set_cursor_position((
+                area.x + 1 + app.cursor_position as u16,
+                area.y + 1,
+            ));
+        }
+        InputMode::Command => {
+            f.set_cursor_position((
+                chunks[2].x + 1 + app.cursor_position as u16 + 1, // +1 for ':'
+                chunks[2].y,
+            ));
+        }
+        _ => {
+            if app.show_method_search {
+                let area = centered_rect(20, 30, f.area());
+                f.set_cursor_position((
+                    area.x + 1 + app.cursor_position as u16,
+                    area.y + 1,
+                ));
+            }
+        }
+    }
 }
 
 fn render_error_popup(f: &mut Frame, error: &str) {
@@ -180,7 +249,7 @@ fn get_method_color(method_str: &str) -> Color {
         "PUT" => Color::Blue,
         "PATCH" => Color::Magenta,
         "DELETE" => Color::Red,
-        _ => Color::White,
+        _ => Color::Reset,
     }
 }
 
@@ -213,7 +282,7 @@ fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
             crate::tui::app::VisibleItemType::Collection { expanded } => {
                 let icon = if *expanded { "▼" } else { "▶" };
                 let style = if is_selected {
-                    Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::REVERSED | Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::Cyan)
                 };
@@ -222,16 +291,16 @@ fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
             crate::tui::app::VisibleItemType::Folder { expanded } => {
                 let icon = if *expanded { "▼" } else { "▶" };
                 let style = if is_selected {
-                    Style::default().bg(Color::White).fg(Color::Black).add_modifier(Modifier::BOLD)
+                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::Gray)
+                    Style::default()
                 };
                 ListItem::new(format!("{}{} {} {}", indent, icon, "📁", item.name)).style(style)
             }
             crate::tui::app::VisibleItemType::Request { method, .. } => {
                 let color = get_method_enum_color(*method);
                 let style = if is_selected {
-                    Style::default().bg(color).fg(Color::Black).add_modifier(Modifier::BOLD)
+                    Style::default().fg(color).add_modifier(Modifier::REVERSED | Modifier::BOLD)
                 } else {
                     Style::default().fg(color)
                 };
@@ -258,16 +327,16 @@ fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
             crate::tui::app::VisibleItemType::Folder { expanded } => {
                 let icon = if *expanded { "▼" } else { "▶" };
                 let style = if is_selected {
-                    Style::default().bg(Color::White).fg(Color::Black).add_modifier(Modifier::BOLD)
+                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::Gray)
+                    Style::default()
                 };
                 ListItem::new(format!("{}{} {} {}", indent, icon, "📁", item.name)).style(style)
             }
             crate::tui::app::VisibleItemType::Request { method, .. } => {
                 let color = get_method_enum_color(*method);
                 let style = if is_selected {
-                    Style::default().bg(color).fg(Color::Black).add_modifier(Modifier::BOLD)
+                    Style::default().fg(color).add_modifier(Modifier::REVERSED | Modifier::BOLD)
                 } else {
                     Style::default().fg(color)
                 };
@@ -332,7 +401,7 @@ fn render_request_bar(f: &mut Frame, app: &App, area: Rect) {
     // Method Badge
     let method_color = get_method_enum_color(app.method);
     let method_style = if is_bar_focused && app.active_request_part == RequestBarPart::Method {
-        Style::default().bg(method_color).fg(Color::Black).add_modifier(Modifier::BOLD)
+        Style::default().fg(method_color).add_modifier(Modifier::REVERSED | Modifier::BOLD)
     } else {
         Style::default().fg(method_color).add_modifier(Modifier::BOLD)
     };
@@ -340,7 +409,7 @@ fn render_request_bar(f: &mut Frame, app: &App, area: Rect) {
     
     // URL
     let url_style = if is_bar_focused && app.active_request_part == RequestBarPart::Url {
-        Style::default().bg(Color::DarkGray).fg(Color::White)
+        Style::default().add_modifier(Modifier::REVERSED)
     } else {
         Style::default()
     };
@@ -348,7 +417,7 @@ fn render_request_bar(f: &mut Frame, app: &App, area: Rect) {
 
     // Send Button
     let send_style = if is_bar_focused && app.active_request_part == RequestBarPart::Send {
-        Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::REVERSED | Modifier::BOLD)
     } else {
         Style::default().fg(Color::Yellow)
     };
@@ -392,7 +461,7 @@ fn render_method_search(f: &mut Frame, app: &App) {
         .map(|(i, m)| {
             let color = get_method_color(m);
             let style = if i == 0 { // Highlight the top match
-                Style::default().bg(color).fg(Color::Black).add_modifier(Modifier::BOLD)
+                Style::default().fg(color).add_modifier(Modifier::REVERSED | Modifier::BOLD)
             } else {
                 Style::default().fg(color)
             };
@@ -426,7 +495,7 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         }
     };
     
-    let p = Paragraph::new(text).style(Style::default().bg(Color::Blue).fg(Color::White));
+    let p = Paragraph::new(text).style(Style::default().add_modifier(Modifier::REVERSED));
     f.render_widget(p, area);
 }
 
