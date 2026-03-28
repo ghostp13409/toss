@@ -1,11 +1,11 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
-use crate::tui::app::{App, FocusedPanel, InputMode, RequestBarPart, UiLayer};
+use crate::tui::app::{App, FocusedPanel, InputMode, PendingItemType, RequestBarPart, UiLayer};
 use crate::cli::args::Method;
 
 pub fn render(f: &mut Frame, app: &mut App) {
@@ -43,6 +43,134 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if app.show_method_search {
         render_method_search(f, app);
     }
+    if app.input_mode == InputMode::Rename {
+        render_rename_popup(f, app);
+    }
+    if app.input_mode == InputMode::CreateItem {
+        render_create_popup(f, app);
+    }
+    if app.input_mode == InputMode::ConfirmDelete {
+        render_delete_confirmation(f, app);
+    }
+    if app.input_mode == InputMode::ConfirmQuit {
+        render_quit_confirmation(f, app);
+    }
+    if app.show_search {
+        render_search_popup(f, app, columns[0]);
+    }
+    if let Some(error) = &app.error_message {
+        render_error_popup(f, error);
+    }
+}
+
+fn render_error_popup(f: &mut Frame, error: &str) {
+    let area = centered_rect(60, 20, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Error ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+    
+    let p = Paragraph::new(error)
+        .block(block)
+        .wrap(Wrap { trim: true })
+        .alignment(ratatui::layout::Alignment::Center);
+    f.render_widget(p, area);
+}
+
+fn render_create_popup(f: &mut Frame, app: &App) {
+    let area = centered_rect(40, 10, f.area());
+    f.render_widget(Clear, area);
+
+    let title = match app.pending_item_type {
+        Some(PendingItemType::Collection) => " Create Collection ",
+        Some(PendingItemType::Folder) => " Create Folder ",
+        Some(PendingItemType::Request) => " Create Request ",
+        None => " Create Item ",
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    
+    let p = Paragraph::new(app.rename_input.as_str())
+        .block(block);
+    f.render_widget(p, area);
+}
+
+fn render_quit_confirmation(f: &mut Frame, _app: &App) {
+    let area = centered_rect(30, 10, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Confirm Quit ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+    
+    let p = Paragraph::new("Quit application? (y/n)")
+        .block(block)
+        .alignment(ratatui::layout::Alignment::Center);
+    f.render_widget(p, area);
+}
+
+fn render_delete_confirmation(f: &mut Frame, app: &App) {
+    let area = centered_rect(30, 10, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Confirm Delete ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+    
+    let text = if app.focused_panel == FocusedPanel::Collections {
+        "Delete entire collection? (y/n)"
+    } else {
+        "Delete selected item? (y/n)"
+    };
+    
+    let p = Paragraph::new(text)
+        .block(block)
+        .alignment(ratatui::layout::Alignment::Center);
+    f.render_widget(p, area);
+}
+
+fn render_search_popup(f: &mut Frame, app: &App, sidebar_area: Rect) {
+    // Position search popup at the bottom of the sidebar
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
+        .split(sidebar_area);
+
+    let area = chunks[1];
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Filter (/) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    
+    let p = Paragraph::new(app.search_query.as_str())
+        .block(block);
+    f.render_widget(p, area);
+}
+
+fn render_rename_popup(f: &mut Frame, app: &App) {
+    let area = centered_rect(40, 10, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Rename ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    
+    let p = Paragraph::new(app.rename_input.as_str())
+        .block(block);
+    f.render_widget(p, area);
 }
 
 fn get_method_color(method_str: &str) -> Color {
@@ -75,40 +203,78 @@ fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
-    let collections_items: Vec<ListItem> = app.collections.iter().enumerate().map(|(i, col)| {
-        let style = if app.focused_panel == FocusedPanel::Collections && i == app.selected_collection_index {
-            Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        ListItem::new(format!(" > {}", col.name)).style(style)
+    // Collections Panel using visible collections (all collections and their items)
+    let visible_collections = app.get_visible_collections();
+    let collections_items: Vec<ListItem> = visible_collections.iter().enumerate().map(|(i, item)| {
+        let indent = "  ".repeat(item.item_type_depth());
+        let is_selected = app.focused_panel == FocusedPanel::Collections && i == app.selected_collection_index;
+        
+        match &item.item_type {
+            crate::tui::app::VisibleItemType::Collection { expanded } => {
+                let icon = if *expanded { "▼" } else { "▶" };
+                let style = if is_selected {
+                    Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Cyan)
+                };
+                ListItem::new(format!("{}{} {} {}", indent, icon, "📦", item.name)).style(style)
+            }
+            crate::tui::app::VisibleItemType::Folder { expanded } => {
+                let icon = if *expanded { "▼" } else { "▶" };
+                let style = if is_selected {
+                    Style::default().bg(Color::White).fg(Color::Black).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                ListItem::new(format!("{}{} {} {}", indent, icon, "📁", item.name)).style(style)
+            }
+            crate::tui::app::VisibleItemType::Request { method, .. } => {
+                let color = get_method_enum_color(*method);
+                let style = if is_selected {
+                    Style::default().bg(color).fg(Color::Black).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(color)
+                };
+                ListItem::new(format!("{}{} {:?}  {}", indent, "  ", method, item.name)).style(style)
+            }
+        }
     }).collect();
 
     let collections_list = List::new(collections_items)
         .block(create_block(" Collections ", app.focused_panel == FocusedPanel::Collections));
     f.render_widget(collections_list, chunks[0]);
 
-    // APIs Panel (scoped to selected collection for now)
-    let mut api_items = Vec::new();
-    if let Some(col) = app.collections.get(app.selected_collection_index) {
-        for item in &col.items {
-            match item {
-                crate::core::collection::CollectionItem::Request(req) => {
-                    let color = get_method_enum_color(req.method);
-                    let style = if app.focused_panel == FocusedPanel::Apis && api_items.len() == app.selected_api_index {
-                        Style::default().bg(color).fg(Color::Black).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(color)
-                    };
-                    api_items.push(ListItem::new(format!(" {:?}  {}", req.method, req.name)).style(style));
-                }
-                crate::core::collection::CollectionItem::Folder(f) => {
-                    api_items.push(ListItem::new(format!(" v {}", f.name)).style(Style::default().add_modifier(Modifier::DIM)));
-                    // In future, recursively show folder contents if expanded
-                }
+    // APIs Panel using visible items
+    let visible_items = app.get_visible_items();
+    let api_items: Vec<ListItem> = visible_items.iter().enumerate().map(|(i, item)| {
+        let indent = "  ".repeat(item.item_type_depth());
+        let is_selected = app.focused_panel == FocusedPanel::Apis && i == app.selected_api_index;
+        
+        match &item.item_type {
+            crate::tui::app::VisibleItemType::Collection { .. } => {
+                // Should not happen in APIs panel currently
+                ListItem::new(format!("{}📦 {}", indent, item.name))
+            }
+            crate::tui::app::VisibleItemType::Folder { expanded } => {
+                let icon = if *expanded { "▼" } else { "▶" };
+                let style = if is_selected {
+                    Style::default().bg(Color::White).fg(Color::Black).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                ListItem::new(format!("{}{} {} {}", indent, icon, "📁", item.name)).style(style)
+            }
+            crate::tui::app::VisibleItemType::Request { method, .. } => {
+                let color = get_method_enum_color(*method);
+                let style = if is_selected {
+                    Style::default().bg(color).fg(Color::Black).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(color)
+                };
+                ListItem::new(format!("{}{} {:?}  {}", indent, "  ", method, item.name)).style(style)
             }
         }
-    }
+    }).collect();
 
     let apis_list = List::new(api_items)
         .block(create_block(" APIs ", app.focused_panel == FocusedPanel::Apis));
@@ -242,19 +408,29 @@ fn render_method_search(f: &mut Frame, app: &App) {
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let text = if app.input_mode == InputMode::Command {
         format!(":{}", app.command_input)
+    } else if app.input_mode == InputMode::Rename {
+        "Enter: Confirm | Esc: Cancel".to_string()
+    } else if app.input_mode == InputMode::CreateItem {
+        "Enter: Create (Empty for default) | Esc: Cancel".to_string()
+    } else if app.input_mode == InputMode::Search {
+        format!("Filter: {} (Esc: Clear, Enter: Keep)", app.search_query)
+    } else if app.input_mode == InputMode::ConfirmDelete {
+        "ARE YOU SURE? (y/n)".to_string()
     } else {
         match app.focused_panel {
-            FocusedPanel::Collections | FocusedPanel::Apis => "[Sidebar] Tab: Cycle | Enter: Select | e: Edit URL",
-            FocusedPanel::RequestBar => "[Request] Tab: Cycle Controls | Enter: Trigger | Esc: Back",
-            _ => "Tab: Cycle | Esc: Back | Ctrl+Enter: Send",
-        }.to_string()
+            FocusedPanel::Collections | FocusedPanel::Apis => {
+                "Tab: Cycle | Enter: Open | /: Filter | Space: Toggle | a: Req | f: Folder | n: Collection | r: Rename | d: Delete".to_string()
+            }
+            FocusedPanel::RequestBar => "[Request] Tab: Cycle Controls | Enter: Trigger | Esc: Back".to_string(),
+            _ => "Tab: Cycle | Esc: Back | Ctrl+Enter: Send".to_string(),
+        }
     };
     
     let p = Paragraph::new(text).style(Style::default().bg(Color::Blue).fg(Color::White));
     f.render_widget(p, area);
 }
 
-fn create_block(title: &'static str, focused: bool) -> Block {
+fn create_block(title: &'static str, focused: bool) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
         .title(title)

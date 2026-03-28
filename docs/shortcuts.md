@@ -42,20 +42,17 @@ The UI is divided into a Left Column (Layer 1) and Right Column (Layers 2-5).
 ## 3. Context-Specific Shortcuts
 
 ### **Layer 1: Collections & APIs Panels**
-- `a`: **Add** new Request/Folder.
+- `a`: **Add** new Request or Folder. (If a Request is created, focus automatically shifts to the Request Bar).
+- `d`: **Delete** selected item (requires confirmation).
 - `r`: **Rename** selected item.
-- `d`: **Delete** selected item.
+- `e`: **Express to Request Bar**. Instantly focus the URL input from the sidebar.
 - `/`: **Search/Filter** collections.
-- `Space`: Expand/Collapse a folder (alternative to `l`/`h`).
+- `Space`: Expand/Collapse a folder.
 
-### **Layer 2: Properties Panel**
-- `e`: Focus the **URL Input** field in the Request Bar above.
-- `m`: Cycle through **HTTP Methods** (GET → POST → PUT, etc.) for the current request.
-
-### **Layer 3: Property Details (Editing)**
-- `i`: Enter **Insert Mode** to type in a text field (if not auto-focused).
-- `b`: **Beautify/Format** the current Body (if JSON/XML).
-- `v`: Open the current Body in your system's `$EDITOR` (e.g., Neovim) for heavy editing.
+### **Layer 2 & 3: Properties & Details**
+- `e`: **Focus Request Bar**. Quickly jump up to edit the URL or Method.
+- `Esc` / `h`: Return to previous layer.
+- `Ctrl + Enter`: Send Request.
 
 ### **Layer 4: Response Panel**
 - `j` / `k`: Scroll response body down/up.

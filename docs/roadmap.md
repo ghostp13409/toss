@@ -37,6 +37,7 @@ Organize requests into a persistent tree structure with full management capabili
 
 Transform the tool into a high-end developer environment.
 
+- **Properties Implementation**: Add all listed properties to the properties panel with proper input handling. (Params, Headers, Auth, Body, Scripts)
 - **Authentication Suites**: Full support for Bearer, Basic, API Keys, and OAuth1-2.
 - **Rich Body & Beautification**: Support for `form-data`, `x-www-form-urlencoded`, and JSON/GraphQL.
 - **Syntax Highlighting**: Integrate `syntect` for both the Response and Body (Selected Prop) panels.
@@ -47,7 +48,7 @@ Transform the tool into a high-end developer environment.
 
 Expand the CLI for CI/CD and implement the scripting engine.
 
-- **`toss run` Subcommand**: A high-performance collection runner (Postman's *Newman* equivalent).
+- **`toss run` Subcommand**: A high-performance collection runner (Postman's _Newman_ equivalent).
 - **Scripting Engine**: Integrate a JavaScript runtime (e.g., `deno_core` or `boa`) for pre-request/post-response logic.
 - **Result Reporting**: Summary outputs and exit codes for automated testing pipelines.
 
@@ -64,10 +65,10 @@ Final tuning for performance and user customization.
 
 ### Project Complexity Overview
 
-| Phase | Main Focus | Risk Level | Primary Crate |
-| :--- | :--- | :--- | :--- |
-| **1** | Networking | Low | `reqwest` |
-| **2** | Vim-UX / UI | Medium | `ratatui` |
-| **3** | Tree / Data | High | `serde` / `postman_collection` |
-| **4** | Editor / DX | Medium | `syntect` |
-| **5** | Scripting | High | `deno_core` / `boa` |
+| Phase | Main Focus  | Risk Level | Primary Crate                  |
+| :---- | :---------- | :--------- | :----------------------------- |
+| **1** | Networking  | Low        | `reqwest`                      |
+| **2** | Vim-UX / UI | Medium     | `ratatui`                      |
+| **3** | Tree / Data | High       | `serde` / `postman_collection` |
+| **4** | Editor / DX | Medium     | `syntect`                      |
+| **5** | Scripting   | High       | `deno_core` / `boa`            |
