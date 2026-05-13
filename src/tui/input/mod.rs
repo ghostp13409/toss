@@ -97,6 +97,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                     let max_rows = match app.selected_property_tab {
                         PropertyTab::Params => req.params.len(),
                         PropertyTab::Headers => req.headers.len(),
+                        PropertyTab::Auth => match &req.auth {
+                            crate::core::collection::Auth::None => 0,
+                            crate::core::collection::Auth::Bearer { .. } => 1,
+                            crate::core::collection::Auth::Basic { .. } => 2,
+                            crate::core::collection::Auth::ApiKey { .. } => 3,
+                        },
                         _ => 0,
                     };
                     if app.property_editor_row < max_rows.saturating_sub(1) {
@@ -181,8 +187,24 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
             FocusedPanel::Properties => {
                 app.focused_panel = FocusedPanel::Details;
+                // For Auth, always start on the field name (Key)
+                if app.selected_property_tab == PropertyTab::Auth {
+                    app.property_editor_field = PropertyEditorField::Key;
+                }
             }
             FocusedPanel::Details => {
+                if app.selected_property_tab == PropertyTab::Auth {
+                    if let Some(req) = app.get_current_request() {
+                        if let crate::core::collection::Auth::ApiKey { .. } = &req.auth {
+                            if app.property_editor_row == 2 {
+                                app.toggle_auth_bool();
+                                return;
+                            }
+                        }
+                    }
+                    // Always switch to Value field when starting to edit Auth
+                    app.property_editor_field = PropertyEditorField::Value;
+                }
                 app.input_mode = InputMode::Editing;
                 let current_val = app.get_kv_editor_value();
                 app.cursor_position = current_val.len();
@@ -306,6 +328,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.cursor_position = 0;
             } else if app.focused_panel == FocusedPanel::Details {
                 app.add_kv_param();
+                app.input_mode = InputMode::Editing;
+                app.property_editor_field = PropertyEditorField::Key;
+                app.cursor_position = 0;
             }
         }
 
@@ -317,6 +342,16 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.pending_item_type = Some(PendingItemType::Folder);
                 app.rename_input.clear();
                 app.cursor_position = 0;
+            }
+        }
+
+        KeyCode::Char('t') => {
+            if app.focused_panel == FocusedPanel::Details {
+                match app.selected_property_tab {
+                    PropertyTab::Auth => app.cycle_auth_type(),
+                    PropertyTab::Body => app.cycle_body_type(),
+                    _ => {}
+                }
             }
         }
 
@@ -399,7 +434,19 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('i') => {
             if app.focused_panel == FocusedPanel::Details {
                 match app.selected_property_tab {
-                    PropertyTab::Params | PropertyTab::Headers => {
+                    PropertyTab::Params | PropertyTab::Headers | PropertyTab::Auth => {
+                        if app.selected_property_tab == PropertyTab::Auth {
+                            if let Some(req) = app.get_current_request() {
+                                if let crate::core::collection::Auth::ApiKey { .. } = &req.auth {
+                                    if app.property_editor_row == 2 {
+                                        // It's a boolean, don't enter editing mode, just toggle
+                                        app.toggle_auth_bool();
+                                        return;
+                                    }
+                                }
+                            }
+                            app.property_editor_field = PropertyEditorField::Value;
+                        }
                         app.input_mode = InputMode::Editing;
                         let current_val = app.get_kv_editor_value();
                         app.cursor_position = current_val.len();
@@ -418,6 +465,11 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.save_current_request();
             app.input_mode = InputMode::Normal;
+            if app.focused_panel == FocusedPanel::Details
+                && app.selected_property_tab == PropertyTab::Auth
+            {
+                app.property_editor_field = PropertyEditorField::Key;
+            }
         }
         KeyCode::Enter => {
             if app.focused_panel == FocusedPanel::RequestBar
@@ -426,6 +478,33 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                 app.save_current_request();
                 app.active_request_part = RequestBarPart::Send;
                 app.input_mode = InputMode::Normal;
+            } else if app.focused_panel == FocusedPanel::Details {
+                app.save_current_request();
+                match app.selected_property_tab {
+                    PropertyTab::Auth => {
+                        app.input_mode = InputMode::Normal;
+                        app.property_editor_field = PropertyEditorField::Key;
+                    }
+                    PropertyTab::Params | PropertyTab::Headers | PropertyTab::Body => {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => {
+                                app.property_editor_field = PropertyEditorField::Value;
+                                let current_val = app.get_kv_editor_value();
+                                app.cursor_position = current_val.len();
+                            }
+                            PropertyEditorField::Value => {
+                                app.property_editor_field = PropertyEditorField::Description;
+                                let current_val = app.get_kv_editor_value();
+                                app.cursor_position = current_val.len();
+                            }
+                            PropertyEditorField::Description => {
+                                app.input_mode = InputMode::Normal;
+                                app.property_editor_field = PropertyEditorField::Key;
+                            }
+                        }
+                    }
+                    _ => app.pop_up(),
+                }
             } else {
                 app.save_current_request();
                 app.pop_up();
@@ -433,11 +512,16 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Tab => {
             if app.focused_panel == FocusedPanel::Details {
-                app.property_editor_field = match app.property_editor_field {
-                    PropertyEditorField::Key => PropertyEditorField::Value,
-                    PropertyEditorField::Value => PropertyEditorField::Description,
-                    PropertyEditorField::Description => PropertyEditorField::Key,
-                };
+                if app.selected_property_tab == PropertyTab::Auth {
+                    // Don't cycle fields in Auth tab, just keep focus on Value
+                    app.property_editor_field = PropertyEditorField::Value;
+                } else {
+                    app.property_editor_field = match app.property_editor_field {
+                        PropertyEditorField::Key => PropertyEditorField::Value,
+                        PropertyEditorField::Value => PropertyEditorField::Description,
+                        PropertyEditorField::Description => PropertyEditorField::Key,
+                    };
+                }
                 let current_val = app.get_kv_editor_value();
                 app.cursor_position = current_val.len();
             } else {
@@ -452,7 +536,6 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
             if app.focused_panel == FocusedPanel::RequestBar
                 && app.active_request_part == RequestBarPart::Url
             {
-                
                 app.insert_char_url(c);
                 app.sync_params_from_url();
             } else if app.focused_panel == FocusedPanel::Details {
@@ -465,7 +548,6 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
             if app.focused_panel == FocusedPanel::RequestBar
                 && app.active_request_part == RequestBarPart::Url
             {
-                
                 app.delete_char_url();
                 app.sync_params_from_url();
             } else if app.focused_panel == FocusedPanel::Details {
@@ -478,7 +560,6 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
             if app.focused_panel == FocusedPanel::RequestBar
                 && app.active_request_part == RequestBarPart::Url
             {
-                
                 app.delete_char_forward_url();
                 app.sync_params_from_url();
             } else if app.focused_panel == FocusedPanel::Details {
@@ -598,14 +679,24 @@ fn handle_rename_mode(app: &mut App, key: KeyEvent) {
 
 fn handle_search_mode(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Esc | KeyCode::Enter => app.input_mode = InputMode::Normal,
+        KeyCode::Esc => {
+            app.search_query.clear();
+            app.show_search = false;
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Enter => {
+            app.show_search = false;
+            app.input_mode = InputMode::Normal;
+        }
         KeyCode::Char(c) => {
             app.search_query.push(c);
             app.cursor_position += 1;
+            app.clamp_selections();
         }
         KeyCode::Backspace => {
             app.search_query.pop();
             app.cursor_position = app.cursor_position.saturating_sub(1);
+            app.clamp_selections();
         }
         _ => {}
     }

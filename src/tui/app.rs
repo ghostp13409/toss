@@ -1,5 +1,5 @@
 use crate::cli::args::Method;
-use crate::core::collection::{Collection, CollectionItem, KVParam, Request, RequestBody};
+use crate::core::collection::{Auth, Collection, CollectionItem, KVParam, Request, RequestBody};
 use reqwest::Url;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -86,6 +86,7 @@ pub struct App {
     pub property_editor_field: PropertyEditorField,
     pub response_body: String,
     pub response_status: Option<String>,
+    pub response_stats: String,
     pub pending_actions: Vec<TuiAction>,
 }
 
@@ -148,6 +149,7 @@ impl App {
             property_editor_field: PropertyEditorField::Key,
             response_body: String::new(),
             response_status: None,
+            response_stats: String::new(),
             pending_actions: Vec::new(),
         }
     }
@@ -216,6 +218,11 @@ impl App {
             let target = match tab {
                 PropertyTab::Params => &mut req.params,
                 PropertyTab::Headers => &mut req.headers,
+                PropertyTab::Body => match &mut req.body {
+                    RequestBody::FormData { items } => items,
+                    RequestBody::XWwwFormUrlEncoded { items } => items,
+                    _ => return,
+                },
                 _ => return,
             };
             target.push(KVParam {
@@ -239,6 +246,11 @@ impl App {
             let target = match tab {
                 PropertyTab::Params => &mut req.params,
                 PropertyTab::Headers => &mut req.headers,
+                PropertyTab::Body => match &mut req.body {
+                    RequestBody::FormData { items } => items,
+                    RequestBody::XWwwFormUrlEncoded { items } => items,
+                    _ => return,
+                },
                 _ => return,
             };
             if !target.is_empty() && row < target.len() {
@@ -251,22 +263,87 @@ impl App {
         }
     }
 
+    pub fn toggle_auth_bool(&mut self) {
+        let row = self.property_editor_row;
+        if let Some(req) = self.get_current_request_mut() {
+            if let Auth::ApiKey { in_header, .. } = &mut req.auth {
+                if row == 2 {
+                    *in_header = !*in_header;
+                }
+            }
+        }
+    }
+
     pub fn update_kv_param(&mut self, value: String) {
         let tab = self.selected_property_tab;
         let row = self.property_editor_row;
         let field = self.property_editor_field;
         if let Some(req) = self.get_current_request_mut() {
-            let target = match tab {
-                PropertyTab::Params => &mut req.params,
-                PropertyTab::Headers => &mut req.headers,
-                _ => return,
-            };
-            if let Some(param) = target.get_mut(row) {
-                match field {
-                    PropertyEditorField::Key => param.key = value,
-                    PropertyEditorField::Value => param.value = value,
-                    PropertyEditorField::Description => param.description = Some(value),
+            match tab {
+                PropertyTab::Params => {
+                    if let Some(p) = req.params.get_mut(row) {
+                        match field {
+                            PropertyEditorField::Key => p.key = value,
+                            PropertyEditorField::Value => p.value = value,
+                            PropertyEditorField::Description => p.description = Some(value),
+                        }
+                    }
                 }
+                PropertyTab::Headers => {
+                    if let Some(p) = req.headers.get_mut(row) {
+                        match field {
+                            PropertyEditorField::Key => p.key = value,
+                            PropertyEditorField::Value => p.value = value,
+                            PropertyEditorField::Description => p.description = Some(value),
+                        }
+                    }
+                }
+                PropertyTab::Auth => match &mut req.auth {
+                    Auth::Bearer { token } => *token = value,
+                    Auth::Basic { username, password } => {
+                        if row == 0 {
+                            *username = value;
+                        } else {
+                            *password = value;
+                        }
+                    }
+                    Auth::ApiKey {
+                        key,
+                        value: v,
+                        in_header,
+                    } => {
+                        if row == 0 {
+                            *key = value;
+                        } else if row == 1 {
+                            *v = value;
+                        } else {
+                            *in_header = value.to_lowercase() == "true";
+                        }
+                    }
+                    _ => {}
+                },
+                PropertyTab::Body => match &mut req.body {
+                    RequestBody::FormData { items } => {
+                        if let Some(p) = items.get_mut(row) {
+                            match field {
+                                PropertyEditorField::Key => p.key = value,
+                                PropertyEditorField::Value => p.value = value,
+                                PropertyEditorField::Description => p.description = Some(value),
+                            }
+                        }
+                    }
+                    RequestBody::XWwwFormUrlEncoded { items } => {
+                        if let Some(p) = items.get_mut(row) {
+                            match field {
+                                PropertyEditorField::Key => p.key = value,
+                                PropertyEditorField::Value => p.value = value,
+                                PropertyEditorField::Description => p.description = Some(value),
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
         }
         if self.selected_property_tab == PropertyTab::Params {
@@ -281,6 +358,11 @@ impl App {
             let target = match tab {
                 PropertyTab::Params => &mut req.params,
                 PropertyTab::Headers => &mut req.headers,
+                PropertyTab::Body => match &mut req.body {
+                    RequestBody::FormData { items } => items,
+                    RequestBody::XWwwFormUrlEncoded { items } => items,
+                    _ => return,
+                },
                 _ => return,
             };
             if let Some(param) = target.get_mut(row) {
@@ -289,6 +371,42 @@ impl App {
         }
         if self.selected_property_tab == PropertyTab::Params {
             self.sync_url_from_params();
+        }
+    }
+
+    pub fn cycle_body_type(&mut self) {
+        if let Some(req) = self.get_current_request_mut() {
+            req.body = match req.body {
+                RequestBody::None => RequestBody::Raw {
+                    content: String::new(),
+                    content_type: "application/json".to_string(),
+                },
+                RequestBody::Raw { .. } => RequestBody::FormData { items: Vec::new() },
+                RequestBody::FormData { .. } => {
+                    RequestBody::XWwwFormUrlEncoded { items: Vec::new() }
+                }
+                RequestBody::XWwwFormUrlEncoded { .. } => RequestBody::None,
+            };
+        }
+    }
+
+    pub fn cycle_auth_type(&mut self) {
+        if let Some(req) = self.get_current_request_mut() {
+            req.auth = match req.auth {
+                Auth::None => Auth::Bearer {
+                    token: String::new(),
+                },
+                Auth::Bearer { .. } => Auth::Basic {
+                    username: String::new(),
+                    password: String::new(),
+                },
+                Auth::Basic { .. } => Auth::ApiKey {
+                    key: String::new(),
+                    value: String::new(),
+                    in_header: true,
+                },
+                Auth::ApiKey { .. } => Auth::None,
+            };
         }
     }
 
@@ -327,12 +445,13 @@ impl App {
     }
 
     pub fn insert_char(&mut self, target: &mut String, c: char) {
-        target.insert(self.cursor_position, c);
-        self.cursor_position += 1;
+        let pos = self.cursor_position.min(target.len());
+        target.insert(pos, c);
+        self.cursor_position = pos + 1;
     }
 
     pub fn delete_char(&mut self, target: &mut String) {
-        if self.cursor_position > 0 {
+        if self.cursor_position > 0 && self.cursor_position <= target.len() {
             target.remove(self.cursor_position - 1);
             self.cursor_position -= 1;
         }
@@ -487,6 +606,24 @@ impl App {
         false
     }
 
+    pub fn clamp_selections(&mut self) {
+        let collections = self.get_visible_collections();
+        if !collections.is_empty() {
+            self.selected_collection_index = self
+                .selected_collection_index
+                .min(collections.len().saturating_sub(1));
+        } else {
+            self.selected_collection_index = 0;
+        }
+
+        let items = self.get_visible_items();
+        if !items.is_empty() {
+            self.selected_api_index = self.selected_api_index.min(items.len().saturating_sub(1));
+        } else {
+            self.selected_api_index = 0;
+        }
+    }
+
     pub fn pop_up(&mut self) {
         if self.show_method_search {
             self.show_method_search = false;
@@ -509,7 +646,15 @@ impl App {
 
     pub fn get_visible_collections(&self) -> Vec<VisibleItem> {
         let mut visible_items = Vec::new();
+        let query = self.search_query.to_lowercase();
+
         for col in &self.collections {
+            if !query.is_empty() && self.focused_panel == FocusedPanel::Collections {
+                if !col.name.to_lowercase().contains(&query) {
+                    continue;
+                }
+            }
+
             visible_items.push(VisibleItem {
                 name: col.name.clone(),
                 depth: 0,
@@ -528,17 +673,68 @@ impl App {
 
     pub fn get_visible_items(&self) -> Vec<VisibleItem> {
         let mut visible_items = Vec::new();
+        let query = self.search_query.to_lowercase();
+
         if let Some(col) = self.collections.get(self.active_collection_index) {
             let items = if let Some(folder_id) = &self.active_folder_id {
                 Self::find_folder_items(&col.items, folder_id).unwrap_or(&col.items)
             } else {
                 &col.items
             };
-            for item in items {
-                Self::collect_visible_items_recursive(item, 0, &mut visible_items);
+
+            if !query.is_empty() && self.focused_panel == FocusedPanel::Apis {
+                for item in items {
+                    Self::collect_filtered_items_recursive(item, 0, &query, &mut visible_items);
+                }
+            } else {
+                for item in items {
+                    Self::collect_visible_items_recursive(item, 0, &mut visible_items);
+                }
             }
         }
         visible_items
+    }
+
+    fn collect_filtered_items_recursive(
+        item: &CollectionItem,
+        depth: usize,
+        query: &str,
+        visible_items: &mut Vec<VisibleItem>,
+    ) {
+        match item {
+            CollectionItem::Folder(f) => {
+                let matches = f.name.to_lowercase().contains(query);
+                if matches {
+                    visible_items.push(VisibleItem {
+                        name: f.name.clone(),
+                        depth,
+                        item_type: VisibleItemType::Folder {
+                            expanded: f.expanded,
+                        },
+                    });
+                }
+                for sub_item in &f.items {
+                    Self::collect_filtered_items_recursive(
+                        sub_item,
+                        if matches { depth + 1 } else { depth },
+                        query,
+                        visible_items,
+                    );
+                }
+            }
+            CollectionItem::Request(r) => {
+                if r.name.to_lowercase().contains(query) {
+                    visible_items.push(VisibleItem {
+                        name: r.name.clone(),
+                        depth,
+                        item_type: VisibleItemType::Request {
+                            method: r.method,
+                            id: r.id.clone(),
+                        },
+                    });
+                }
+            }
+        }
     }
 
     fn find_folder_items<'a>(
@@ -688,17 +884,68 @@ impl App {
 
     pub fn get_kv_editor_value(&self) -> String {
         if let Some(req) = self.get_current_request() {
-            let target = match self.selected_property_tab {
-                PropertyTab::Params => &req.params,
-                PropertyTab::Headers => &req.headers,
-                _ => return String::new(),
-            };
-            if let Some(p) = target.get(self.property_editor_row) {
-                return match self.property_editor_field {
-                    PropertyEditorField::Key => p.key.clone(),
-                    PropertyEditorField::Value => p.value.clone(),
-                    PropertyEditorField::Description => p.description.clone().unwrap_or_default(),
-                };
+            match self.selected_property_tab {
+                PropertyTab::Params => {
+                    if let Some(p) = req.params.get(self.property_editor_row) {
+                        return match self.property_editor_field {
+                            PropertyEditorField::Key => p.key.clone(),
+                            PropertyEditorField::Value => p.value.clone(),
+                            PropertyEditorField::Description => {
+                                p.description.clone().unwrap_or_default()
+                            }
+                        };
+                    }
+                }
+                PropertyTab::Headers => {
+                    if let Some(p) = req.headers.get(self.property_editor_row) {
+                        return match self.property_editor_field {
+                            PropertyEditorField::Key => p.key.clone(),
+                            PropertyEditorField::Value => p.value.clone(),
+                            PropertyEditorField::Description => {
+                                p.description.clone().unwrap_or_default()
+                            }
+                        };
+                    }
+                }
+                PropertyTab::Auth => match &req.auth {
+                    Auth::Bearer { token } => return token.clone(),
+                    Auth::Basic { username, password } => {
+                        if self.property_editor_row == 0 {
+                            return username.clone();
+                        } else {
+                            return password.clone();
+                        }
+                    }
+                    Auth::ApiKey { key, value, .. } => {
+                        if self.property_editor_row == 0 {
+                            return key.clone();
+                        } else if self.property_editor_row == 1 {
+                            return value.clone();
+                        } else {
+                            // "In Header" is bool, returning as string
+                            match &req.auth {
+                                Auth::ApiKey { in_header, .. } => return in_header.to_string(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                PropertyTab::Body => match &req.body {
+                    RequestBody::FormData { items } | RequestBody::XWwwFormUrlEncoded { items } => {
+                        if let Some(p) = items.get(self.property_editor_row) {
+                            return match self.property_editor_field {
+                                PropertyEditorField::Key => p.key.clone(),
+                                PropertyEditorField::Value => p.value.clone(),
+                                PropertyEditorField::Description => {
+                                    p.description.clone().unwrap_or_default()
+                                }
+                            };
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
         }
         String::new()

@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 enum AppEvent {
     Input(KeyEvent),
     Tick,
-    HttpResponse(String, Option<String>),
+    HttpResponse(String, Option<String>, Option<String>),
 }
 
 pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
@@ -117,9 +117,12 @@ where
                     handle_input(app, key);
                 }
                 AppEvent::Tick => {}
-                AppEvent::HttpResponse(body, status) => {
+                AppEvent::HttpResponse(body, status, stats) => {
                     app.response_body = body;
                     app.response_status = status;
+                    if let Some(s) = stats {
+                        app.response_stats = s;
+                    }
                 }
             }
         }
@@ -149,31 +152,41 @@ where
                             }
                         }
 
-                        let body = match &req.body {
-                            crate::core::collection::RequestBody::Raw { content, .. } => {
-                                Some(content.clone())
-                            }
-                            _ => None,
-                        };
+                        let body_type = req.body.clone();
+                        let auth = req.auth.clone();
 
                         let tx_res = tx.clone();
-                        let engine_clone = engine.clone(); // RequestEngine needs to be Cloneable
+                        let engine_clone = engine.clone();
 
                         tokio::spawn(async move {
-                            match engine_clone.send(method, &url, headers, params, body).await {
+                            let start = Instant::now();
+                            match engine_clone
+                                .send(method, &url, headers, params, body_type, auth)
+                                .await
+                            {
                                 Ok(res) => {
+                                    let duration = start.elapsed();
                                     let status = Some(res.status().to_string());
+                                    let version = format!("{:?}", res.version());
                                     let body = res
                                         .text()
                                         .await
                                         .unwrap_or_else(|e| format!("Error reading body: {}", e));
-                                    let _ = tx_res.send(AppEvent::HttpResponse(body, status)).await;
+                                    let size = body.len();
+                                    let stats = format!(
+                                        "Time: {:?}\nSize: {} bytes\nProto: {}",
+                                        duration, size, version
+                                    );
+                                    let _ = tx_res
+                                        .send(AppEvent::HttpResponse(body, status, Some(stats)))
+                                        .await;
                                 }
                                 Err(e) => {
                                     let _ = tx_res
                                         .send(AppEvent::HttpResponse(
                                             format!("Error: {}", e),
                                             Some("ERROR".to_string()),
+                                            None,
                                         ))
                                         .await;
                                 }

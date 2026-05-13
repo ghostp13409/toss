@@ -99,7 +99,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 // Find cursor position in KV editor
                 if matches!(
                     app.selected_property_tab,
-                    PropertyTab::Params | PropertyTab::Headers
+                    PropertyTab::Params | PropertyTab::Headers | PropertyTab::Auth
                 ) {
                     let area = Layout::default()
                         .direction(Direction::Vertical)
@@ -116,10 +116,23 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let x = inner_area.x;
                     let y = inner_area.y + 1 + app.property_editor_row as u16;
 
-                    let offset = match app.property_editor_field {
-                        PropertyEditorField::Key => 5 * inner_area.width / 100,
-                        PropertyEditorField::Value => 35 * inner_area.width / 100,
-                        PropertyEditorField::Description => 65 * inner_area.width / 100,
+                    let show_description = matches!(
+                        app.selected_property_tab,
+                        PropertyTab::Params | PropertyTab::Headers
+                    );
+
+                    let offset = if show_description {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => (5 * inner_area.width / 100) + 1,
+                            PropertyEditorField::Value => (35 * inner_area.width / 100) + 2,
+                            PropertyEditorField::Description => (65 * inner_area.width / 100) + 3,
+                        }
+                    } else {
+                        match app.property_editor_field {
+                            PropertyEditorField::Key => (5 * inner_area.width / 100) + 1,
+                            PropertyEditorField::Value => (50 * inner_area.width / 100) + 2,
+                            PropertyEditorField::Description => (50 * inner_area.width / 100) + 2,
+                        }
                     };
 
                     f.set_cursor_position((x + offset + app.cursor_position as u16, y));
@@ -428,8 +441,13 @@ fn render_right_column(f: &mut Frame, app: &App, area: Rect) {
         title_with_key("T", "Stat"),
         app.focused_panel == FocusedPanel::Stats,
     );
-    let stat_content =
-        Paragraph::new(app.response_status.as_deref().unwrap_or("No Data")).block(stat_block);
+    let stat_content = Paragraph::new(if app.response_stats.is_empty() {
+        "No Data".to_string()
+    } else {
+        app.response_stats.clone()
+    })
+    .block(stat_block)
+    .wrap(Wrap { trim: false });
     f.render_widget(stat_content, response_area[1]);
 }
 
@@ -518,6 +536,7 @@ fn render_details_area(f: &mut Frame, app: &App, area: Rect) {
                 area,
                 title_with_key("P", "Query Parameters"),
                 &params,
+                true,
             );
         }
         PropertyTab::Headers => {
@@ -525,40 +544,134 @@ fn render_details_area(f: &mut Frame, app: &App, area: Rect) {
                 .get_current_request()
                 .map(|r| r.headers.clone())
                 .unwrap_or_default();
-            render_kv_editor(f, app, area, title_with_key("H", "Headers"), &headers);
+            render_kv_editor(f, app, area, title_with_key("H", "Headers"), &headers, true);
         }
         PropertyTab::Auth => {
+            let auth = app
+                .get_current_request()
+                .map(|r| r.auth.clone())
+                .unwrap_or(crate::core::collection::Auth::None);
+            let title = match auth {
+                crate::core::collection::Auth::None => " Auth: None (Press 't' to change) ",
+                crate::core::collection::Auth::Bearer { .. } => {
+                    " Auth: Bearer (Press 't' to change) "
+                }
+                crate::core::collection::Auth::Basic { .. } => {
+                    " Auth: Basic (Press 't' to change) "
+                }
+                crate::core::collection::Auth::ApiKey { .. } => {
+                    " Auth: ApiKey (Press 't' to change) "
+                }
+            };
             let block = create_block(
-                title_with_key("U", "Auth"),
+                title_with_key("U", title),
                 app.focused_panel == FocusedPanel::Details,
             );
-            f.render_widget(
-                Paragraph::new(" Auth configuration coming soon "),
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-            );
-            f.render_widget(block, area);
+
+            let mut kv_params = Vec::new();
+            match auth {
+                crate::core::collection::Auth::None => {
+                    f.render_widget(Paragraph::new(" No authentication ").block(block), area);
+                }
+                crate::core::collection::Auth::Bearer { token } => {
+                    kv_params.push(crate::core::collection::KVParam {
+                        key: "Token".to_string(),
+                        value: token,
+                        enabled: true,
+                        description: None,
+                    });
+                    render_kv_editor(f, app, area, title_with_key("U", title), &kv_params, false);
+                }
+                crate::core::collection::Auth::Basic { username, password } => {
+                    kv_params.push(crate::core::collection::KVParam {
+                        key: "Username".to_string(),
+                        value: username,
+                        enabled: true,
+                        description: None,
+                    });
+                    kv_params.push(crate::core::collection::KVParam {
+                        key: "Password".to_string(),
+                        value: password,
+                        enabled: true,
+                        description: None,
+                    });
+                    render_kv_editor(f, app, area, title_with_key("U", title), &kv_params, false);
+                }
+                crate::core::collection::Auth::ApiKey {
+                    key,
+                    value,
+                    in_header,
+                } => {
+                    kv_params.push(crate::core::collection::KVParam {
+                        key: "Key".to_string(),
+                        value: key,
+                        enabled: true,
+                        description: None,
+                    });
+                    kv_params.push(crate::core::collection::KVParam {
+                        key: "Value".to_string(),
+                        value: value,
+                        enabled: true,
+                        description: None,
+                    });
+                    kv_params.push(crate::core::collection::KVParam {
+                        key: "In Header".to_string(),
+                        value: in_header.to_string(),
+                        enabled: true,
+                        description: None,
+                    });
+                    render_kv_editor(f, app, area, title_with_key("U", title), &kv_params, false);
+                }
+            }
         }
         PropertyTab::Body => {
-            let block = create_block(
-                title_with_key("B", "Body (Press 'v' to edit)"),
-                app.focused_panel == FocusedPanel::Details,
-            );
-            let body_text = if let Some(req) = app.get_current_request() {
-                match &req.body {
-                    crate::core::collection::RequestBody::Raw { content, .. } => content.clone(),
-                    _ => String::new(),
+            let body = app
+                .get_current_request()
+                .map(|r| r.body.clone())
+                .unwrap_or(crate::core::collection::RequestBody::None);
+            let title = match body {
+                crate::core::collection::RequestBody::None => " Body: None (Press 't' to change) ",
+                crate::core::collection::RequestBody::Raw { .. } => {
+                    " Body: Raw (Press 't' to change) "
                 }
-            } else {
-                String::new()
+                crate::core::collection::RequestBody::FormData { .. } => {
+                    " Body: Form Data (Press 't' to change) "
+                }
+                crate::core::collection::RequestBody::XWwwFormUrlEncoded { .. } => {
+                    " Body: x-www-form-urlencoded (Press 't' to change) "
+                }
             };
 
-            let p = Paragraph::new(body_text)
-                .block(block)
-                .wrap(Wrap { trim: false });
-            f.render_widget(p, area);
+            match body {
+                crate::core::collection::RequestBody::None => {
+                    let block = create_block(
+                        title_with_key("B", title),
+                        app.focused_panel == FocusedPanel::Details,
+                    );
+                    f.render_widget(Paragraph::new(" No body ").block(block), area);
+                }
+                crate::core::collection::RequestBody::Raw { content, .. } => {
+                    let block = create_block(
+                        title_with_key("B", title),
+                        app.focused_panel == FocusedPanel::Details,
+                    );
+                    let p = Paragraph::new(format!(
+                        "(Press 'v' to edit)
+
+{}",
+                        content
+                    ))
+                    .block(block)
+                    .wrap(Wrap { trim: false });
+                    f.render_widget(p, area);
+                }
+                crate::core::collection::RequestBody::FormData { items } => {
+                    render_kv_editor(f, app, area, title_with_key("B", title), &items, false);
+                }
+                crate::core::collection::RequestBody::XWwwFormUrlEncoded { items } => {
+                    render_kv_editor(f, app, area, title_with_key("B", title), &items, false);
+                }
+            }
         }
         PropertyTab::Scripts => {
             let block = create_block(
@@ -583,12 +696,19 @@ fn render_kv_editor<'a, T: Into<ratatui::text::Line<'a>>>(
     area: Rect,
     title: T,
     items: &[KVParam],
+    show_description: bool,
 ) {
     let block = create_block(title, app.focused_panel == FocusedPanel::Details);
 
-    let header_cells = ["", "Key", "Value", "Description"]
-        .iter()
-        .map(|h| Cell::from(*h).style(Style::default().add_modifier(Modifier::BOLD)));
+    let mut header_cells = vec![
+        Cell::from("").style(Style::default().add_modifier(Modifier::BOLD)),
+        Cell::from("Key").style(Style::default().add_modifier(Modifier::BOLD)),
+        Cell::from("Value").style(Style::default().add_modifier(Modifier::BOLD)),
+    ];
+    if show_description {
+        header_cells
+            .push(Cell::from("Description").style(Style::default().add_modifier(Modifier::BOLD)));
+    }
     let header = Row::new(header_cells).height(1).bottom_margin(0);
 
     let rows: Vec<Row> = items
@@ -604,14 +724,22 @@ fn render_kv_editor<'a, T: Into<ratatui::text::Line<'a>>>(
                 Cell::from(check),
                 Cell::from(item.key.as_str()),
                 Cell::from(item.value.as_str()),
-                Cell::from(item.description.as_deref().unwrap_or("")),
             ];
+            if show_description {
+                cells.push(Cell::from(item.description.as_deref().unwrap_or("")));
+            }
 
             if is_row_focused {
                 let field_idx = match app.property_editor_field {
                     PropertyEditorField::Key => 1,
                     PropertyEditorField::Value => 2,
-                    PropertyEditorField::Description => 3,
+                    PropertyEditorField::Description => {
+                        if show_description {
+                            3
+                        } else {
+                            2
+                        }
+                    }
                 };
                 cells[field_idx] = cells[field_idx]
                     .clone()
@@ -622,18 +750,25 @@ fn render_kv_editor<'a, T: Into<ratatui::text::Line<'a>>>(
         })
         .collect();
 
-    let table = Table::new(
-        rows,
-        [
+    let constraints = if show_description {
+        vec![
             Constraint::Percentage(5),
             Constraint::Percentage(30),
             Constraint::Percentage(30),
             Constraint::Percentage(35),
-        ],
-    )
-    .header(header)
-    .block(block)
-    .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        ]
+    } else {
+        vec![
+            Constraint::Percentage(5),
+            Constraint::Percentage(45),
+            Constraint::Percentage(50),
+        ]
+    };
+
+    let table = Table::new(rows, constraints)
+        .header(header)
+        .block(block)
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     f.render_widget(table, area);
 }

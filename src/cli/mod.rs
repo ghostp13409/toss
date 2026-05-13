@@ -48,6 +48,15 @@ pub async fn run_cli(command: Commands) -> Result<(), Box<dyn std::error::Error>
                 return Ok(());
             }
 
+            let body_type = if let Some(b) = final_body {
+                crate::core::collection::RequestBody::Raw {
+                    content: b,
+                    content_type: "application/json".to_string(),
+                }
+            } else {
+                crate::core::collection::RequestBody::None
+            };
+
             let engine = RequestEngine::new();
             let response = engine
                 .send(
@@ -55,7 +64,8 @@ pub async fn run_cli(command: Commands) -> Result<(), Box<dyn std::error::Error>
                     &final_url,
                     final_headers,
                     Vec::new(),
-                    final_body,
+                    body_type,
+                    crate::core::collection::Auth::None,
                 )
                 .await?;
 
