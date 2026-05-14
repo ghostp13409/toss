@@ -14,3 +14,10 @@
 - After each testable implementation, do not perform the verification tests yourself.
 - Instead, provide the user with clear, step-by-step instructions (commands and expected outcomes) to test the implementation manually.
 - Wait for user confirmation or feedback before proceeding to the next task.
+
+## Maintain Code Quality
+- Make sure to create appropriate files and structure the codebase. 
+- Don't always add code into one single file; break it down into smaller, manageable pieces when applicable.
+- Make sure to write clear, self-explanatory code.
+- code structure should follow the best practices of the Rust ecosystem.
+- If a file contains 400-500+ lines of code, it's probably better to refactor it into smaller, more manageable pieces.

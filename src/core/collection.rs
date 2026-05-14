@@ -8,6 +8,8 @@ pub struct Collection {
     pub items: Vec<CollectionItem>,
     #[serde(default)]
     pub expanded: bool,
+    #[serde(default)]
+    pub env_vars: Vec<KVParam>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -71,6 +73,7 @@ impl Collection {
             name,
             items: Vec::new(),
             expanded: false,
+            env_vars: Vec::new(),
         }
     }
 
@@ -90,6 +93,28 @@ impl Collection {
             }
         }
         None
+    }
+
+    pub fn replace_urls_with_placeholder(&mut self, base_url: &str, placeholder: &str) -> Vec<(String, String)> {
+        let mut changed_ids = Vec::new();
+        Self::recursive_replace(&mut self.items, base_url, placeholder, &mut changed_ids);
+        changed_ids
+    }
+
+    fn recursive_replace(items: &mut [CollectionItem], base_url: &str, placeholder: &str, changed: &mut Vec<(String, String)>) {
+        for item in items {
+            match item {
+                CollectionItem::Request(r) => {
+                    if r.url.starts_with(base_url) {
+                        r.url = r.url.replace(base_url, placeholder);
+                        changed.push((r.id.clone(), r.url.clone()));
+                    }
+                }
+                CollectionItem::Folder(f) => {
+                    Self::recursive_replace(&mut f.items, base_url, placeholder, changed)
+                }
+            }
+        }
     }
 }
 

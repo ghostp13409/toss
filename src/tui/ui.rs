@@ -65,6 +65,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if let Some(error) = &app.error_message {
         render_error_popup(f, error);
     }
+    if app.show_autocomplete {
+        render_autocomplete(f, app);
+    }
 
     // 5. Cursor positioning
     match app.input_mode {
@@ -296,16 +299,16 @@ fn get_method_enum_color(method: Method) -> Color {
     }
 }
 
-fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
+fn render_left_column(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Percentage(50), // Collections
-            Constraint::Percentage(50), // APIs
+            Constraint::Percentage(50), // APIs / Environments
         ])
         .split(area);
 
-    // Collections Panel using visible collections (all collections and their items)
+    // ... (render_collections logic remains mostly the same, but using app state)
     let visible_collections = app.get_visible_collections();
     let collections_items: Vec<ListItem> = visible_collections
         .iter()
@@ -356,56 +359,149 @@ fn render_left_column(f: &mut Frame, app: &App, area: Rect) {
         title_with_key("C", "Collections"),
         app.focused_panel == FocusedPanel::Collections,
     ));
-    f.render_widget(collections_list, chunks[0]);
+    app.collections_state
+        .select(Some(app.selected_collection_index));
+    f.render_stateful_widget(collections_list, chunks[0], &mut app.collections_state);
 
-    // APIs Panel using visible items
-    let visible_items = app.get_visible_items();
-    let api_items: Vec<ListItem> = visible_items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let indent = "  ".repeat(item.item_type_depth());
-            let is_selected =
-                app.focused_panel == FocusedPanel::Apis && i == app.selected_api_index;
-
-            match &item.item_type {
-                crate::tui::app::VisibleItemType::Collection { .. } => {
-                    // Should not happen in APIs panel currently
-                    ListItem::new(format!("{}📦 {}", indent, item.name))
-                }
-                crate::tui::app::VisibleItemType::Folder { expanded } => {
-                    let icon = if *expanded { "▼" } else { "▶" };
-                    let style = if is_selected {
-                        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
-                    } else {
-                        Style::default()
-                    };
-                    ListItem::new(format!("{}{} {} {}", indent, icon, "📁", item.name)).style(style)
-                }
-                crate::tui::app::VisibleItemType::Request { method, .. } => {
-                    let color = get_method_enum_color(*method);
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(color)
-                            .add_modifier(Modifier::REVERSED | Modifier::BOLD)
-                    } else {
-                        Style::default().fg(color)
-                    };
-                    ListItem::new(format!("{}{} {:?}  {}", indent, "  ", method, item.name))
-                        .style(style)
-                }
-            }
-        })
-        .collect();
-
-    let apis_list = List::new(api_items).block(create_block(
-        title_with_key("A", "APIs"),
-        app.focused_panel == FocusedPanel::Apis,
-    ));
-    f.render_widget(apis_list, chunks[1]);
+    render_left_bottom_panel(f, app, chunks[1]);
 }
 
-fn render_right_column(f: &mut Frame, app: &App, area: Rect) {
+fn render_left_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
+    let is_apis = app.left_bottom_tab == crate::tui::app::LeftBottomTab::Apis;
+    let is_envs = app.left_bottom_tab == crate::tui::app::LeftBottomTab::Environments;
+
+    let api_style = if is_apis {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let env_style = if is_envs {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let key_style = Style::default()
+        .fg(Color::Magenta)
+        .add_modifier(Modifier::BOLD);
+
+    let block_title = Line::from(vec![
+        Span::raw(" "),
+        Span::styled("A", key_style),
+        Span::styled(" APIs ", api_style),
+        Span::raw("| "),
+        Span::styled("V", key_style),
+        Span::styled(" Variables ", env_style),
+    ]);
+
+    let block = create_block(
+        block_title,
+        app.focused_panel == FocusedPanel::Apis || app.focused_panel == FocusedPanel::Environments,
+    );
+
+    match app.left_bottom_tab {
+        crate::tui::app::LeftBottomTab::Apis => {
+            let visible_items = app.get_visible_items();
+            let api_items: Vec<ListItem> = visible_items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let indent = "  ".repeat(item.item_type_depth());
+                    let is_selected =
+                        app.focused_panel == FocusedPanel::Apis && i == app.selected_api_index;
+
+                    match &item.item_type {
+                        crate::tui::app::VisibleItemType::Collection { .. } => {
+                            ListItem::new(format!("{}📦 {}", indent, item.name))
+                        }
+                        crate::tui::app::VisibleItemType::Folder { expanded } => {
+                            let icon = if *expanded { "▼" } else { "▶" };
+                            let style = if is_selected {
+                                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+                            } else {
+                                Style::default()
+                            };
+                            ListItem::new(format!("{}{} {} {}", indent, icon, "📁", item.name)).style(style)
+                        }
+                        crate::tui::app::VisibleItemType::Request { method, .. } => {
+                            let color = get_method_enum_color(*method);
+                            let style = if is_selected {
+                                Style::default()
+                                    .fg(color)
+                                    .add_modifier(Modifier::REVERSED | Modifier::BOLD)
+                            } else {
+                                Style::default().fg(color)
+                            };
+                            ListItem::new(format!("{}{} {:?}  {}", indent, "  ", method, item.name))
+                                .style(style)
+                        }
+                    }
+                })
+                .collect();
+
+            let apis_list = List::new(api_items).block(block);
+            app.apis_state.select(Some(app.selected_api_index));
+            f.render_stateful_widget(apis_list, area, &mut app.apis_state);
+        }
+        crate::tui::app::LeftBottomTab::Environments => {
+            let env_vars = app.get_active_collection_env_vars();
+            let header = Row::new(vec![
+                Cell::from("Key").style(Style::default().add_modifier(Modifier::BOLD)),
+                Cell::from("Value").style(Style::default().add_modifier(Modifier::BOLD)),
+            ]).height(1).bottom_margin(0);
+
+            let rows: Vec<Row> = env_vars
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let is_row_selected = app.focused_panel == FocusedPanel::Environments && i == app.selected_env_index;
+                    
+                    let is_editing_this_value = app.input_mode == crate::tui::app::InputMode::Editing
+                        && app.focused_panel == FocusedPanel::Environments
+                        && i == app.selected_env_index
+                        && app.property_editor_field == crate::tui::app::PropertyEditorField::Value;
+
+                    let display_value = if app.mask_env_values && !is_editing_this_value {
+                        "*".repeat(item.value.len())
+                    } else {
+                        item.value.clone()
+                    };
+
+                    let mut cells = vec![
+                        Cell::from(highlight_env_vars(item.key.as_str())),
+                        Cell::from(highlight_env_vars(&display_value)),
+                    ];
+
+                    if is_row_selected {
+                        let field_idx = match app.property_editor_field {
+                            PropertyEditorField::Key => 0,
+                            PropertyEditorField::Value => 1,
+                            _ => 0,
+                        };
+                        cells[field_idx] = cells[field_idx]
+                            .clone()
+                            .style(Style::default().add_modifier(Modifier::REVERSED));
+                    }
+                    Row::new(cells)
+                })
+                .collect();
+
+            let table = Table::new(rows, [Constraint::Percentage(40), Constraint::Percentage(60)])
+                .header(header)
+                .block(block);
+            
+            app.environments_table_state.select(Some(app.selected_env_index));
+            f.render_stateful_widget(table, area, &mut app.environments_table_state);
+        }
+    }
+}
+
+fn render_right_column(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -432,8 +528,9 @@ fn render_right_column(f: &mut Frame, app: &App, area: Rect) {
         title_with_key("E", "Response"),
         app.focused_panel == FocusedPanel::Response,
     );
-    let response_content = Paragraph::new(app.response_body.as_str())
+    let response_content = Paragraph::new(highlight_env_vars(app.response_body.as_str()))
         .block(response_block)
+        .scroll((app.response_scroll, app.response_horizontal_scroll))
         .wrap(Wrap { trim: false });
     f.render_widget(response_content, response_area[0]);
 
@@ -447,6 +544,7 @@ fn render_right_column(f: &mut Frame, app: &App, area: Rect) {
         app.response_stats.clone()
     })
     .block(stat_block)
+    .scroll((app.response_scroll, 0))
     .wrap(Wrap { trim: false });
     f.render_widget(stat_content, response_area[1]);
 }
@@ -523,7 +621,7 @@ fn render_properties_tabs(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(tabs, area);
 }
 
-fn render_details_area(f: &mut Frame, app: &App, area: Rect) {
+fn render_details_area(f: &mut Frame, app: &mut App, area: Rect) {
     match app.selected_property_tab {
         PropertyTab::Params => {
             let params = app
@@ -655,14 +753,16 @@ fn render_details_area(f: &mut Frame, app: &App, area: Rect) {
                         title_with_key("B", title),
                         app.focused_panel == FocusedPanel::Details,
                     );
-                    let p = Paragraph::new(format!(
+                    let body_text = format!(
                         "(Press 'v' to edit)
 
 {}",
                         content
-                    ))
-                    .block(block)
-                    .wrap(Wrap { trim: false });
+                    );
+                    let p = Paragraph::new(highlight_env_vars(&body_text))
+                        .block(block)
+                        .scroll((app.details_scroll as u16, 0))
+                        .wrap(Wrap { trim: false });
                     f.render_widget(p, area);
                 }
                 crate::core::collection::RequestBody::FormData { items } => {
@@ -692,7 +792,7 @@ fn render_details_area(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_kv_editor<'a, T: Into<ratatui::text::Line<'a>>>(
     f: &mut Frame,
-    app: &App,
+    app: &mut App,
     area: Rect,
     title: T,
     items: &[KVParam],
@@ -720,13 +820,13 @@ fn render_kv_editor<'a, T: Into<ratatui::text::Line<'a>>>(
 
             let check = if item.enabled { "[x]" } else { "[ ]" };
 
-            let mut cells = vec![
+                let mut cells = vec![
                 Cell::from(check),
-                Cell::from(item.key.as_str()),
-                Cell::from(item.value.as_str()),
+                Cell::from(highlight_env_vars(item.key.as_str())),
+                Cell::from(highlight_env_vars(item.value.as_str())),
             ];
             if show_description {
-                cells.push(Cell::from(item.description.as_deref().unwrap_or("")));
+                cells.push(Cell::from(highlight_env_vars(item.description.as_deref().unwrap_or(""))));
             }
 
             if is_row_focused {
@@ -770,7 +870,8 @@ fn render_kv_editor<'a, T: Into<ratatui::text::Line<'a>>>(
         .block(block)
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-    f.render_widget(table, area);
+    app.details_table_state.select(Some(app.property_editor_row));
+    f.render_stateful_widget(table, area, &mut app.details_table_state);
 }
 
 fn render_request_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -815,7 +916,7 @@ fn render_request_bar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         Style::default()
     };
-    let url_text = Paragraph::new(app.url.as_str()).style(url_style);
+    let url_text = Paragraph::new(highlight_env_vars(app.url.as_str())).style(url_style);
 
     // Send Button
     let send_style = if is_bar_focused && app.active_request_part == RequestBarPart::Send {
@@ -896,17 +997,99 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     } else {
         match app.focused_panel {
             FocusedPanel::Collections | FocusedPanel::Apis => {
-                "Tab: Cycle | Enter: Open | /: Filter | Space: Toggle | a: Req | f: Folder | n: Collection | r: Rename | d: Delete".to_string()
+                "gg/G: Top/Bottom | V: Variables | /: Filter | Space: Toggle | a: Req | f: Folder | n: Collection | r: Rename | d: Delete".to_string()
+            }
+            FocusedPanel::Environments => {
+                "gg/G: Top/Bottom | A: APIs | m: Mask | a: Add | d: Delete | Enter: Edit | Esc: Back".to_string()
             }
             FocusedPanel::RequestBar => "[Request] Tab: Cycle Controls | Enter: Trigger | Esc: Back".to_string(),
             FocusedPanel::Properties => "h/l: Switch Tabs | j/k: Nav Rows | Enter: Edit | a: Add | d: Delete | Esc: Back".to_string(),
-            FocusedPanel::Details => "Esc: Back | Enter: Confirm | Arrows: Nav Field".to_string(),
-            _ => "Tab: Cycle | Esc: Back | Ctrl+Enter: Send".to_string(),
+            FocusedPanel::Details => "gg/G: Top/Bottom | Ctrl+u/d: PgUp/Dn | Esc: Back | Enter: Edit | Arrows: Nav Field".to_string(),
+            FocusedPanel::Response | FocusedPanel::Stats => "gg/G: Top/Bottom | Ctrl+u/d: PgUp/Dn | h/j/k/l: Scroll | Esc: Back".to_string(),
         }
     };
 
     let p = Paragraph::new(text).style(Style::default().add_modifier(Modifier::REVERSED));
     f.render_widget(p, area);
+}
+
+fn render_autocomplete(f: &mut Frame, app: &App) {
+    let options = app.get_autocomplete_options();
+    if options.is_empty() {
+        return;
+    }
+
+    let area = centered_rect(30, 40, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Variables (Enter to select) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let items: Vec<ListItem> = options
+        .iter()
+        .enumerate()
+        .map(|(i, opt)| {
+            let style = if i == app.autocomplete_index {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            ListItem::new(format!(" {} ", opt)).style(style)
+        })
+        .collect();
+
+    let list = List::new(items).block(block);
+    f.render_widget(list, area);
+}
+
+fn highlight_env_vars<'a>(text: &'a str) -> Line<'static> {
+    let mut spans = Vec::new();
+    let mut last_pos = 0;
+    
+    // Simple scan for {{variable}}
+    let mut i = 0;
+    let chars: Vec<char> = text.chars().collect();
+    while i < chars.len() {
+        if i + 1 < chars.len() && chars[i] == '{' && chars[i+1] == '{' {
+            if i > last_pos {
+                spans.push(Span::raw(text[last_pos..i].to_string()));
+            }
+            
+            let mut found_end = false;
+            for j in i+2..chars.len().saturating_sub(1) {
+                if chars[j] == '}' && chars[j+1] == '}' {
+                    spans.push(Span::styled(
+                        text[i..j+2].to_string(),
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    ));
+                    i = j + 2;
+                    last_pos = i;
+                    found_end = true;
+                    break;
+                }
+            }
+            
+            if !found_end {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    
+    if last_pos < text.len() {
+        spans.push(Span::raw(text[last_pos..].to_string()));
+    }
+    
+    if spans.is_empty() && !text.is_empty() {
+        spans.push(Span::raw(text.to_string()));
+    }
+    
+    Line::from(spans)
 }
 
 fn title_with_key<'a>(key: &'a str, title: &'a str) -> Line<'a> {

@@ -6,6 +6,10 @@ use crate::tui::app::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn handle_input(app: &mut App, key: KeyEvent) {
+    if app.show_autocomplete {
+        handle_autocomplete_input(app, key);
+        return;
+    }
     if app.show_method_search {
         handle_method_search_input(app, key);
         return;
@@ -21,7 +25,13 @@ pub fn handle_input(app: &mut App, key: KeyEvent) {
     }
 
     match app.input_mode {
-        InputMode::Normal => handle_normal_mode(app, key),
+        InputMode::Normal => {
+            let res = handle_normal_mode(app, key);
+            if key.code != KeyCode::Char('g') {
+                app.g_pressed = false;
+            }
+            res
+        }
         InputMode::Editing => handle_editing_mode(app, key),
         InputMode::Command => handle_command_mode(app, key),
         InputMode::Rename => handle_rename_mode(app, key),
@@ -35,7 +45,6 @@ pub fn handle_input(app: &mut App, key: KeyEvent) {
 fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Char('C') => app.focused_panel = FocusedPanel::Collections,
-        KeyCode::Char('A') => app.focused_panel = FocusedPanel::Apis,
         KeyCode::Char('R') => {
             app.focus_request_bar();
             app.cursor_position = app.url.len();
@@ -72,6 +81,116 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('E') => app.focused_panel = FocusedPanel::Response,
         KeyCode::Char('T') => app.focused_panel = FocusedPanel::Stats,
+        KeyCode::Char('V') => {
+            app.left_bottom_tab = crate::tui::app::LeftBottomTab::Environments;
+            app.focused_panel = FocusedPanel::Environments;
+        }
+        KeyCode::Char('A') => {
+            app.left_bottom_tab = crate::tui::app::LeftBottomTab::Apis;
+            app.focused_panel = FocusedPanel::Apis;
+        }
+        KeyCode::Char('m') => {
+            if app.focused_panel == FocusedPanel::Environments {
+                app.toggle_env_mask();
+            }
+        }
+
+        // gg and G shortcuts
+        KeyCode::Char('g') => {
+            if app.g_pressed {
+                match app.focused_panel {
+                    FocusedPanel::Collections => app.selected_collection_index = 0,
+                    FocusedPanel::Apis => app.selected_api_index = 0,
+                    FocusedPanel::Details => app.property_editor_row = 0,
+                    FocusedPanel::Response | FocusedPanel::Stats => app.response_scroll = 0,
+                    _ => {}
+                }
+                app.g_pressed = false;
+            } else {
+                app.g_pressed = true;
+            }
+            return;
+        }
+        KeyCode::Char('G') => {
+            match app.focused_panel {
+                FocusedPanel::Collections => {
+                    app.selected_collection_index = app.get_visible_collections().len().saturating_sub(1)
+                }
+                FocusedPanel::Apis => {
+                    app.selected_api_index = app.get_visible_items().len().saturating_sub(1)
+                }
+                FocusedPanel::Details => {
+                    if let Some(req) = app.get_current_request() {
+                        let max_rows = match app.selected_property_tab {
+                            PropertyTab::Params => req.params.len(),
+                            PropertyTab::Headers => req.headers.len(),
+                            PropertyTab::Auth => match &req.auth {
+                                crate::core::collection::Auth::None => 0,
+                                crate::core::collection::Auth::Bearer { .. } => 1,
+                                crate::core::collection::Auth::Basic { .. } => 2,
+                                crate::core::collection::Auth::ApiKey { .. } => 3,
+                            },
+                            PropertyTab::Body => match &req.body {
+                                crate::core::collection::RequestBody::FormData { items } => {
+                                    items.len()
+                                }
+                                crate::core::collection::RequestBody::XWwwFormUrlEncoded {
+                                    items,
+                                } => items.len(),
+                                _ => 0,
+                            },
+                            _ => 0,
+                        };
+                        app.property_editor_row = max_rows.saturating_sub(1);
+                    }
+                }
+                FocusedPanel::Response | FocusedPanel::Stats => {
+                    // Approximate bottom by setting high scroll
+                    app.response_scroll = 1000;
+                }
+                _ => {}
+            }
+        }
+
+        // Page Up/Down (Ctrl-u / Ctrl-d)
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            match app.focused_panel {
+                FocusedPanel::Collections => {
+                    app.selected_collection_index = app.selected_collection_index.saturating_sub(10);
+                }
+                FocusedPanel::Apis => {
+                    app.selected_api_index = app.selected_api_index.saturating_sub(10);
+                }
+                FocusedPanel::Details => {
+                    app.property_editor_row = app.property_editor_row.saturating_sub(10);
+                    app.details_scroll = app.details_scroll.saturating_sub(10);
+                }
+                FocusedPanel::Response | FocusedPanel::Stats => {
+                    app.response_scroll = app.response_scroll.saturating_sub(10);
+                }
+                _ => {}
+            }
+        }
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            match app.focused_panel {
+                FocusedPanel::Collections => {
+                    let max = app.get_visible_collections().len().saturating_sub(1);
+                    app.selected_collection_index = (app.selected_collection_index + 10).min(max);
+                }
+                FocusedPanel::Apis => {
+                    let max = app.get_visible_items().len().saturating_sub(1);
+                    app.selected_api_index = (app.selected_api_index + 10).min(max);
+                }
+                FocusedPanel::Details => {
+                    app.property_editor_row += 10; // Capped in render/logic later
+                    app.details_scroll = app.details_scroll.saturating_add(10);
+                }
+                FocusedPanel::Response | FocusedPanel::Stats => {
+                    app.response_scroll = app.response_scroll.saturating_add(10);
+                }
+                _ => {}
+            }
+        }
 
         KeyCode::Char('q') => app.input_mode = InputMode::ConfirmQuit,
         KeyCode::Tab => app.next_panel(),
@@ -92,23 +211,55 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                     app.selected_api_index += 1;
                 }
             }
+            FocusedPanel::Environments => {
+                let env_vars = app.get_active_collection_env_vars();
+                if app.selected_env_index < env_vars.len().saturating_sub(1) {
+                    app.selected_env_index += 1;
+                }
+            }
             FocusedPanel::Details => {
                 if let Some(req) = app.get_current_request() {
-                    let max_rows = match app.selected_property_tab {
-                        PropertyTab::Params => req.params.len(),
-                        PropertyTab::Headers => req.headers.len(),
-                        PropertyTab::Auth => match &req.auth {
-                            crate::core::collection::Auth::None => 0,
-                            crate::core::collection::Auth::Bearer { .. } => 1,
-                            crate::core::collection::Auth::Basic { .. } => 2,
-                            crate::core::collection::Auth::ApiKey { .. } => 3,
-                        },
-                        _ => 0,
-                    };
-                    if app.property_editor_row < max_rows.saturating_sub(1) {
-                        app.property_editor_row += 1;
+                    let is_kv_tab = matches!(
+                        app.selected_property_tab,
+                        PropertyTab::Params | PropertyTab::Headers | PropertyTab::Auth
+                    ) || (app.selected_property_tab == PropertyTab::Body
+                        && matches!(
+                            req.body,
+                            crate::core::collection::RequestBody::FormData { .. }
+                                | crate::core::collection::RequestBody::XWwwFormUrlEncoded { .. }
+                        ));
+
+                    if is_kv_tab {
+                        let max_rows = match app.selected_property_tab {
+                            PropertyTab::Params => req.params.len(),
+                            PropertyTab::Headers => req.headers.len(),
+                            PropertyTab::Auth => match &req.auth {
+                                crate::core::collection::Auth::None => 0,
+                                crate::core::collection::Auth::Bearer { .. } => 1,
+                                crate::core::collection::Auth::Basic { .. } => 2,
+                                crate::core::collection::Auth::ApiKey { .. } => 3,
+                            },
+                            PropertyTab::Body => match &req.body {
+                                crate::core::collection::RequestBody::FormData { items } => {
+                                    items.len()
+                                }
+                                crate::core::collection::RequestBody::XWwwFormUrlEncoded {
+                                    items,
+                                } => items.len(),
+                                _ => 0,
+                            },
+                            _ => 0,
+                        };
+                        if app.property_editor_row < max_rows.saturating_sub(1) {
+                            app.property_editor_row += 1;
+                        }
+                    } else {
+                        app.details_scroll = app.details_scroll.saturating_add(1);
                     }
                 }
+            }
+            FocusedPanel::Response | FocusedPanel::Stats => {
+                app.response_scroll = app.response_scroll.saturating_add(1);
             }
             _ => {}
         },
@@ -126,10 +277,34 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                     app.selected_api_index -= 1;
                 }
             }
-            FocusedPanel::Details => {
-                if app.property_editor_row > 0 {
-                    app.property_editor_row -= 1;
+            FocusedPanel::Environments => {
+                if app.selected_env_index > 0 {
+                    app.selected_env_index -= 1;
                 }
+            }
+            FocusedPanel::Details => {
+                if let Some(req) = app.get_current_request() {
+                    let is_kv_tab = matches!(
+                        app.selected_property_tab,
+                        PropertyTab::Params | PropertyTab::Headers | PropertyTab::Auth
+                    ) || (app.selected_property_tab == PropertyTab::Body
+                        && matches!(
+                            req.body,
+                            crate::core::collection::RequestBody::FormData { .. }
+                                | crate::core::collection::RequestBody::XWwwFormUrlEncoded { .. }
+                        ));
+
+                    if is_kv_tab {
+                        if app.property_editor_row > 0 {
+                            app.property_editor_row -= 1;
+                        }
+                    } else {
+                        app.details_scroll = app.details_scroll.saturating_sub(1);
+                    }
+                }
+            }
+            FocusedPanel::Response | FocusedPanel::Stats => {
+                app.response_scroll = app.response_scroll.saturating_sub(1);
             }
             _ => {}
         },
@@ -157,6 +332,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                             }
                             app.focus_request_bar();
                             app.cursor_position = app.url.len();
+                            app.reset_scroll();
                         }
                     }
                 }
@@ -180,10 +356,17 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                             }
                             app.focus_request_bar();
                             app.cursor_position = app.url.len();
+                            app.reset_scroll();
                         }
                         _ => {}
                     }
                 }
+            }
+            FocusedPanel::Environments => {
+                app.input_mode = InputMode::Editing;
+                app.property_editor_field = PropertyEditorField::Key;
+                let current_val = app.get_env_editor_value();
+                app.cursor_position = current_val.len();
             }
             FocusedPanel::Properties => {
                 app.focused_panel = FocusedPanel::Details;
@@ -242,6 +425,13 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 }
                 _ => {}
             },
+            FocusedPanel::Environments => {
+                app.property_editor_field = match app.property_editor_field {
+                    PropertyEditorField::Key => PropertyEditorField::Value,
+                    PropertyEditorField::Value => PropertyEditorField::Value,
+                    _ => PropertyEditorField::Key,
+                };
+            }
             FocusedPanel::RequestBar => {
                 app.active_request_part = match app.active_request_part {
                     RequestBarPart::Method => RequestBarPart::Url,
@@ -254,6 +444,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
             FocusedPanel::Apis => {
                 app.focused_panel = FocusedPanel::RequestBar;
+            }
+            FocusedPanel::Response => {
+                app.response_horizontal_scroll = app.response_horizontal_scroll.saturating_add(1);
             }
             _ => {
                 app.next_panel();
@@ -275,12 +468,22 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 }
                 _ => {}
             },
+            FocusedPanel::Environments => {
+                app.property_editor_field = match app.property_editor_field {
+                    PropertyEditorField::Key => PropertyEditorField::Key,
+                    PropertyEditorField::Value => PropertyEditorField::Key,
+                    _ => PropertyEditorField::Key,
+                };
+            }
             FocusedPanel::RequestBar => {
                 app.active_request_part = match app.active_request_part {
                     RequestBarPart::Method => RequestBarPart::Send,
                     RequestBarPart::Url => RequestBarPart::Method,
                     RequestBarPart::Send => RequestBarPart::Url,
                 };
+            }
+            FocusedPanel::Response => {
+                app.response_horizontal_scroll = app.response_horizontal_scroll.saturating_sub(1);
             }
             _ => {
                 app.pop_up();
@@ -331,6 +534,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.input_mode = InputMode::Editing;
                 app.property_editor_field = PropertyEditorField::Key;
                 app.cursor_position = 0;
+            } else if app.focused_panel == FocusedPanel::Environments {
+                app.add_env_var();
+                app.input_mode = InputMode::Editing;
+                app.property_editor_field = PropertyEditorField::Key;
+                let current_val = app.get_env_editor_value();
+                app.cursor_position = current_val.len();
             }
         }
 
@@ -367,6 +576,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('d') => {
             if app.focused_panel == FocusedPanel::Details {
                 app.delete_kv_param();
+            } else if app.focused_panel == FocusedPanel::Environments {
+                app.delete_env_var();
             } else {
                 app.input_mode = InputMode::ConfirmDelete;
             }
@@ -390,6 +601,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                     }
                 }
                 app.cursor_position = app.rename_input.len();
+            } else if app.focused_panel == FocusedPanel::Environments {
+                app.input_mode = InputMode::Editing;
+                app.property_editor_field = PropertyEditorField::Key;
+                let current_val = app.get_env_editor_value();
+                app.cursor_position = current_val.len();
             }
         }
 
@@ -505,6 +721,22 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                     }
                     _ => app.pop_up(),
                 }
+            } else if app.focused_panel == FocusedPanel::Environments {
+                match app.property_editor_field {
+                    PropertyEditorField::Key => {
+                        app.property_editor_field = PropertyEditorField::Value;
+                        let current_val = app.get_env_editor_value();
+                        app.cursor_position = current_val.len();
+                    }
+                    PropertyEditorField::Value => {
+                        app.input_mode = InputMode::Normal;
+                        app.property_editor_field = PropertyEditorField::Key;
+                    }
+                    _ => {
+                        app.input_mode = InputMode::Normal;
+                        app.property_editor_field = PropertyEditorField::Key;
+                    }
+                }
             } else {
                 app.save_current_request();
                 app.pop_up();
@@ -524,6 +756,14 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                 }
                 let current_val = app.get_kv_editor_value();
                 app.cursor_position = current_val.len();
+            } else if app.focused_panel == FocusedPanel::Environments {
+                app.property_editor_field = match app.property_editor_field {
+                    PropertyEditorField::Key => PropertyEditorField::Value,
+                    PropertyEditorField::Value => PropertyEditorField::Description,
+                    PropertyEditorField::Description => PropertyEditorField::Key,
+                };
+                let current_val = app.get_env_editor_value();
+                app.cursor_position = current_val.len();
             } else {
                 app.save_current_request();
                 app.next_panel();
@@ -538,10 +778,29 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
             {
                 app.insert_char_url(c);
                 app.sync_params_from_url();
+                if app.url[..app.cursor_position].ends_with("{{") {
+                    app.show_autocomplete = true;
+                    app.autocomplete_query.clear();
+                    app.autocomplete_index = 0;
+                }
             } else if app.focused_panel == FocusedPanel::Details {
                 let mut current_val = app.get_kv_editor_value();
                 app.insert_char(&mut current_val, c);
-                app.update_kv_param(current_val);
+                app.update_kv_param(current_val.clone());
+                if current_val[..app.cursor_position].ends_with("{{") {
+                    app.show_autocomplete = true;
+                    app.autocomplete_query.clear();
+                    app.autocomplete_index = 0;
+                }
+            } else if app.focused_panel == FocusedPanel::Environments {
+                let mut current_val = app.get_env_editor_value();
+                app.insert_char(&mut current_val, c);
+                app.update_env_editor_value(current_val.clone());
+                if current_val[..app.cursor_position].ends_with("{{") {
+                    app.show_autocomplete = true;
+                    app.autocomplete_query.clear();
+                    app.autocomplete_index = 0;
+                }
             }
         }
         KeyCode::Backspace => {
@@ -554,6 +813,10 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                 let mut current_val = app.get_kv_editor_value();
                 app.delete_char(&mut current_val);
                 app.update_kv_param(current_val);
+            } else if app.focused_panel == FocusedPanel::Environments {
+                let mut current_val = app.get_env_editor_value();
+                app.delete_char(&mut current_val);
+                app.update_env_editor_value(current_val);
             }
         }
         KeyCode::Delete => {
@@ -566,12 +829,18 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
                 let mut current_val = app.get_kv_editor_value();
                 app.delete_char_forward(&mut current_val);
                 app.update_kv_param(current_val);
+            } else if app.focused_panel == FocusedPanel::Environments {
+                let mut current_val = app.get_env_editor_value();
+                app.delete_char_forward(&mut current_val);
+                app.update_env_editor_value(current_val);
             }
         }
         KeyCode::Left => app.move_cursor_left(),
         KeyCode::Right => {
             let max = if app.focused_panel == FocusedPanel::Details {
                 app.get_kv_editor_value().len()
+            } else if app.focused_panel == FocusedPanel::Environments {
+                app.get_env_editor_value().len()
             } else {
                 app.url.len()
             };
@@ -581,9 +850,76 @@ fn handle_editing_mode(app: &mut App, key: KeyEvent) {
         KeyCode::End => {
             app.cursor_position = if app.focused_panel == FocusedPanel::Details {
                 app.get_kv_editor_value().len()
+            } else if app.focused_panel == FocusedPanel::Environments {
+                app.get_env_editor_value().len()
             } else {
                 app.url.len()
             };
+        }
+        _ => {}
+    }
+}
+
+fn handle_autocomplete_input(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => {
+            app.show_autocomplete = false;
+            app.autocomplete_query.clear();
+        }
+        KeyCode::Enter => {
+            app.insert_autocomplete_selection();
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            let options = app.get_autocomplete_options();
+            if !options.is_empty() {
+                app.autocomplete_index = (app.autocomplete_index + 1) % options.len();
+            }
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            let options = app.get_autocomplete_options();
+            if !options.is_empty() {
+                if app.autocomplete_index == 0 {
+                    app.autocomplete_index = options.len() - 1;
+                } else {
+                    app.autocomplete_index -= 1;
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            app.autocomplete_query.push(c);
+            app.autocomplete_index = 0;
+            // Also insert char into the actual field so user sees what they type
+            if app.focused_panel == FocusedPanel::RequestBar && app.active_request_part == RequestBarPart::Url {
+                app.insert_char_url(c);
+            } else if app.focused_panel == FocusedPanel::Details {
+                let mut val = app.get_kv_editor_value();
+                app.insert_char(&mut val, c);
+                app.update_kv_param(val);
+            } else if app.focused_panel == FocusedPanel::Environments {
+                let mut val = app.get_env_editor_value();
+                app.insert_char(&mut val, c);
+                app.update_env_editor_value(val);
+            }
+        }
+        KeyCode::Backspace => {
+            if !app.autocomplete_query.is_empty() {
+                app.autocomplete_query.pop();
+                app.autocomplete_index = 0;
+            } else {
+                app.show_autocomplete = false;
+            }
+            // Also delete from actual field
+            if app.focused_panel == FocusedPanel::RequestBar && app.active_request_part == RequestBarPart::Url {
+                app.delete_char_url();
+            } else if app.focused_panel == FocusedPanel::Details {
+                let mut val = app.get_kv_editor_value();
+                app.delete_char(&mut val);
+                app.update_kv_param(val);
+            } else if app.focused_panel == FocusedPanel::Environments {
+                let mut val = app.get_env_editor_value();
+                app.delete_char(&mut val);
+                app.update_env_editor_value(val);
+            }
         }
         _ => {}
     }
@@ -632,6 +968,8 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) {
             let cmd = app.command_input.clone();
             if let Some(path) = cmd.strip_prefix("import ") {
                 app.import_collection(path);
+            } else if cmd == "env create" {
+                app.create_smart_env();
             } else {
                 match cmd.as_str() {
                     "q" | "quit" => app.should_quit = true,
