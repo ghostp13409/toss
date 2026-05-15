@@ -23,17 +23,26 @@ Focus on the visual layout and the core "Vim-first" state machine, adopting a la
 - **Drill-Down Navigation**: Implement the logic to shift focus deeper (`Enter`/`l`) or pop up (`Esc`/`h`) between logical layers.
 - **Command Mode (`:`)**: Build the bottom-bar command line for quick actions like `:set env` or `:save`.
 
-## Phase 3: Data Management, CRUD & Multi-format Imports
+## Phase 3: Advanced Source Code Imports
+
+Implement functionality to directly import APIs from a project's source code by parsing controllers and routes.
+
+- **CLI Subcommand**: Add `toss parse <path>` subcommand.
+- **Framework Detection**: Add logic to detect frameworks (Spring, ASP.NET, Express, Django, Flask, FastAPI, Laravel, Quarkus, Ruby on Rails, Next.js).
+- **Endpoint Extraction**: Extract HTTP methods, paths, and metadata.
+- **Collection Generation**: Group endpoints into Toss Collections mirroring the project structure.
+
+## Phase 4: Data Management, CRUD & Multi-format Imports
 
 Organize requests into a persistent tree structure with full management capabilities.
 
 - **Tree Implementation**: Build the Collections and APIs panels with nested folder support.
 - **CRUD Operations**: Implement `a` (Add), `r` (Rename), and `d` (Delete) functionality within the trees.
 - **Search & Filter (`/`)**: Add real-time tree filtering for large collections.
-- **Multi-format Support**: Integrate `postman_collection` and build parsers for **Insomnia** and **Swagger/OpenAPI**.
+- **Multi-format Support**: Implement `toss import <path>` to integrate `postman_collection` and build parsers for **Insomnia** and **Swagger/OpenAPI**.
 - **Persistence Layer**: Implement local storage (JSON or SQLite) for history and collections.
 
-## Phase 4: Advanced REST, Highlighting & Editor Integration
+## Phase 5: Advanced REST, Highlighting & Editor Integration
 
 Transform the tool into a high-end developer environment.
 
@@ -44,7 +53,7 @@ Transform the tool into a high-end developer environment.
 - **External Editor (`v`)**: Allow opening the request body in the user's system `$EDITOR` (e.g., Neovim).
 - **Response Stats**: Real-time calculation of response time, size, and protocol details.
 
-## Phase 5: CLI Mode, Automation & Scripting
+## Phase 6: CLI Mode, Automation & Scripting
 
 Expand the CLI for CI/CD and implement the scripting engine.
 
@@ -52,7 +61,7 @@ Expand the CLI for CI/CD and implement the scripting engine.
 - **Scripting Engine**: Integrate a JavaScript runtime (e.g., `deno_core` or `boa`) for pre-request/post-response logic.
 - **Result Reporting**: Summary outputs and exit codes for automated testing pipelines.
 
-## Phase 6: Configuration, Optimization & Polish
+## Phase 7: Configuration, Optimization & Polish
 
 Final tuning for performance and user customization.
 
@@ -65,10 +74,12 @@ Final tuning for performance and user customization.
 
 ### Project Complexity Overview
 
-| Phase | Main Focus  | Risk Level | Primary Crate                  |
-| :---- | :---------- | :--------- | :----------------------------- |
-| **1** | Networking  | Low        | `reqwest`                      |
-| **2** | Vim-UX / UI | Medium     | `ratatui`                      |
-| **3** | Tree / Data | High       | `serde` / `postman_collection` |
-| **4** | Editor / DX | Medium     | `syntect`                      |
-| **5** | Scripting   | High       | `deno_core` / `boa`            |
+| Phase | Main Focus     | Risk Level | Primary Crate                  |
+| :---- | :------------- | :--------- | :----------------------------- |
+| **1** | Networking     | Low        | `reqwest`                      |
+| **2** | Vim-UX / UI    | Medium     | `ratatui`                      |
+| **3** | Source Import  | High       | `syn` / `regex`                |
+| **4** | Tree / Data    | High       | `serde` / `postman_collection` |
+| **5** | Editor / DX    | Medium     | `syntect`                      |
+| **6** | Scripting      | High       | `deno_core` / `boa`            |
+| **7** | Configuration  | Low        | `serde_yaml` / `serde_toml`    |

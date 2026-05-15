@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 enum AppEvent {
     Input(KeyEvent),
     Tick,
-    HttpResponse(String, Option<String>, Option<String>),
+    HttpResponse(String, Option<String>, Option<String>, Option<String>),
 }
 
 pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
@@ -117,8 +117,9 @@ where
                     handle_input(app, key);
                 }
                 AppEvent::Tick => {}
-                AppEvent::HttpResponse(body, status, stats) => {
+                AppEvent::HttpResponse(body, status, stats, content_type) => {
                     app.response_body = body;
+                    app.response_content_type = content_type;
                     app.response_status = status;
                     if let Some(s) = stats {
                         app.response_stats = s;
@@ -136,24 +137,70 @@ where
                     app.response_status = None;
 
                     if let Some(req) = app.get_current_request() {
+                        let env = app.get_active_env();
                         let method = req.method.into();
-                        let url = app.url.clone();
+                        let url = env.replace_vars(&app.url);
+                        
                         let mut headers = HashMap::new();
                         for h in &req.headers {
                             if h.enabled && !h.key.is_empty() {
-                                headers.insert(h.key.clone(), h.value.clone());
+                                let key = env.replace_vars(&h.key);
+                                let value = env.replace_vars(&h.value);
+                                headers.insert(key, value);
                             }
                         }
 
                         let mut params = Vec::new();
                         for p in &req.params {
                             if p.enabled && !p.key.is_empty() {
-                                params.push((p.key.clone(), p.value.clone()));
+                                let key = env.replace_vars(&p.key);
+                                let value = env.replace_vars(&p.value);
+                                params.push((key, value));
                             }
                         }
 
-                        let body_type = req.body.clone();
-                        let auth = req.auth.clone();
+                        let mut body_type = req.body.clone();
+                        match &mut body_type {
+                            crate::core::collection::RequestBody::Raw { content, .. } => {
+                                *content = env.replace_vars(content);
+                            }
+                            crate::core::collection::RequestBody::FormData { items }
+                            | crate::core::collection::RequestBody::XWwwFormUrlEncoded {
+                                items,
+                            } => {
+                                for item in items {
+                                    item.key = env.replace_vars(&item.key);
+                                    item.value = env.replace_vars(&item.value);
+                                }
+                            }
+                            crate::core::collection::RequestBody::None => {}
+                        }
+
+                        let auth = match req.auth.clone() {
+                            crate::core::collection::Auth::Bearer { token } => {
+                                crate::core::collection::Auth::Bearer {
+                                    token: env.replace_vars(&token),
+                                }
+                            }
+                            crate::core::collection::Auth::Basic { username, password } => {
+                                crate::core::collection::Auth::Basic {
+                                    username: env.replace_vars(&username),
+                                    password: env.replace_vars(&password),
+                                }
+                            }
+                            crate::core::collection::Auth::ApiKey {
+                                key,
+                                value,
+                                in_header,
+                            } => crate::core::collection::Auth::ApiKey {
+                                key: env.replace_vars(&key),
+                                value: env.replace_vars(&value),
+                                in_header,
+                            },
+                            crate::core::collection::Auth::None => {
+                                crate::core::collection::Auth::None
+                            }
+                        };
 
                         let tx_res = tx.clone();
                         let engine_clone = engine.clone();
@@ -168,6 +215,11 @@ where
                                     let duration = start.elapsed();
                                     let status = Some(res.status().to_string());
                                     let version = format!("{:?}", res.version());
+                                    let content_type = res
+                                        .headers()
+                                        .get(reqwest::header::CONTENT_TYPE)
+                                        .and_then(|v| v.to_str().ok())
+                                        .map(|s| s.to_string());
                                     let body = res
                                         .text()
                                         .await
@@ -178,7 +230,12 @@ where
                                         duration, size, version
                                     );
                                     let _ = tx_res
-                                        .send(AppEvent::HttpResponse(body, status, Some(stats)))
+                                        .send(AppEvent::HttpResponse(
+                                            body,
+                                            status,
+                                            Some(stats),
+                                            content_type,
+                                        ))
                                         .await;
                                 }
                                 Err(e) => {
@@ -186,6 +243,7 @@ where
                                         .send(AppEvent::HttpResponse(
                                             format!("Error: {}", e),
                                             Some("ERROR".to_string()),
+                                            None,
                                             None,
                                         ))
                                         .await;

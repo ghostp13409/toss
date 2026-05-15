@@ -48,6 +48,18 @@ pub enum Commands {
         #[arg(long)]
         offline: bool,
     },
+
+    /// Import a collection from a file (Postman, Insomnia, Swagger)
+    Import {
+        /// Path to the file to import
+        path: String,
+    },
+
+    /// Parse a project directory to extract APIs
+    Parse {
+        /// Path to the project directory
+        path: String,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug, Serialize, Deserialize)]

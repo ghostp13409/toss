@@ -1,6 +1,9 @@
 pub mod args;
 
 use crate::core::env::Environment;
+use crate::core::import::import_collection;
+use crate::core::parser::parse_project;
+use crate::core::persistence::PersistenceManager;
 use crate::engine::http::RequestEngine;
 use args::Commands;
 use std::collections::HashMap;
@@ -18,6 +21,7 @@ pub async fn run_cli(command: Commands) -> Result<(), Box<dyn std::error::Error>
             headers_only,
             offline,
         } => {
+            // ... (rest of Send implementation)
             let environment = if let Some(path) = env {
                 Environment::from_file(path)?
             } else {
@@ -91,6 +95,25 @@ pub async fn run_cli(command: Commands) -> Result<(), Box<dyn std::error::Error>
             } else {
                 print!("{}", body_text);
             }
+        }
+        Commands::Import { path } => {
+            let collection = import_collection(path)?;
+            let persistence = PersistenceManager::new();
+            let mut existing = persistence.load_collections()?;
+            existing.push(collection.clone());
+            persistence.save_collections(&existing)?;
+            println!("Successfully imported collection: {}", collection.name);
+        }
+        Commands::Parse { path } => {
+            let collection = parse_project(path)?;
+            let persistence = PersistenceManager::new();
+            let mut existing = persistence.load_collections()?;
+            existing.push(collection.clone());
+            persistence.save_collections(&existing)?;
+            println!(
+                "Successfully parsed project and created collection: {}",
+                collection.name
+            );
         }
     }
     Ok(())
