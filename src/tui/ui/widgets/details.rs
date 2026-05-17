@@ -41,7 +41,21 @@ pub fn render_right_column(f: &mut Frame, app: &mut App, area: Rect) {
     );
 
     let formatted_body = format_content(&app.response_body, app.response_content_type.as_deref());
-    let highlighted_body = highlight_content(&formatted_body, app.response_content_type.as_deref());
+    let trimmed_body = formatted_body.trim_end();
+    let highlighted_body = highlight_content(trimmed_body, app.response_content_type.as_deref());
+
+    let response_area_inner = response_block.inner(response_area[0]);
+    let response_height = response_area_inner.height;
+    let line_count = highlighted_body.lines.len() as u16;
+
+    if line_count <= response_height {
+        app.response_scroll = 0;
+    } else {
+        let max_scroll = line_count.saturating_sub(response_height);
+        if app.response_scroll > max_scroll {
+            app.response_scroll = max_scroll;
+        }
+    }
 
     let response_content = Paragraph::new(highlighted_body)
         .block(response_block)
@@ -97,9 +111,22 @@ pub fn render_right_column(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
+    let stat_area_inner = stat_block.inner(response_area[1]);
+    let stat_height = stat_area_inner.height;
+    let stat_line_count = stat_lines.len() as u16;
+
+    if stat_line_count <= stat_height {
+        app.stats_scroll = 0;
+    } else {
+        let max_scroll = stat_line_count.saturating_sub(stat_height);
+        if app.stats_scroll > max_scroll {
+            app.stats_scroll = max_scroll;
+        }
+    }
+
     let stat_content = Paragraph::new(stat_lines)
         .block(stat_block)
-        .scroll((app.response_scroll, 0))
+        .scroll((app.stats_scroll, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(stat_content, response_area[1]);
 }
