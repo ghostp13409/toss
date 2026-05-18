@@ -34,6 +34,7 @@ impl App {
             rename_input: String::new(),
             pending_item_type: None,
             error_message: None,
+            notification: None,
             // should_delete_item: false,
             selected_property_tab: PropertyTab::Params,
             property_editor_row: 0,
@@ -41,9 +42,8 @@ impl App {
             response_body: String::new(),
             response_content_type: None,
             response_status: None,
-            response_stats: String::new(),
-            pending_actions: Vec::new(),
-            response_scroll: 0,
+            response_stats_data: None,
+            selected_stats_tab: StatsTab::Overview,            pending_actions: Vec::new(),            response_scroll: 0,
             response_horizontal_scroll: 0,
             stats_scroll: 0,
             details_scroll: 0,            collections_state: ListState::default(),
@@ -84,6 +84,10 @@ impl App {
 
     pub fn toggle_env_mask(&mut self) {
         self.mask_env_values = !self.mask_env_values;
+    }
+
+    pub fn notify(&mut self, message: impl Into<String>) {
+        self.notification = Some((message.into(), std::time::Instant::now()));
     }
 
     pub fn create_smart_env(&mut self) {

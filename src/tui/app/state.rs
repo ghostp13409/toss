@@ -3,6 +3,23 @@ use crate::cli::args::Method;
 use crate::core::collection::Collection;
 use ratatui::widgets::{ListState, TableState};
 
+#[derive(Debug, Clone, Default)]
+pub struct ResponseStats {
+    pub total_time: std::time::Duration,
+    pub dns_time: std::time::Duration,
+    pub connect_time: std::time::Duration,
+    pub tls_time: std::time::Duration,
+    pub ttfb: std::time::Duration,
+    pub download_time: std::time::Duration,
+    pub header_size: usize,
+    pub body_size: usize,
+    pub version: String,
+    pub headers: std::collections::HashMap<String, String>,
+    pub url: String,
+    pub method: String,
+    pub remote_addr: Option<String>,
+}
+
 pub struct App {
     pub input_mode: InputMode,
     pub focused_panel: FocusedPanel,
@@ -26,6 +43,7 @@ pub struct App {
     pub rename_input: String,
     pub pending_item_type: Option<PendingItemType>,
     pub error_message: Option<String>,
+    pub notification: Option<(String, std::time::Instant)>,
     // pub should_delete_item: bool,
     pub selected_property_tab: PropertyTab,
     pub property_editor_row: usize,
@@ -33,7 +51,8 @@ pub struct App {
     pub response_body: String,
     pub response_content_type: Option<String>,
     pub response_status: Option<String>,
-    pub response_stats: String,
+    pub response_stats_data: Option<ResponseStats>,
+    pub selected_stats_tab: StatsTab,
     pub pending_actions: Vec<TuiAction>,
     pub response_scroll: u16,
     pub response_horizontal_scroll: u16,
